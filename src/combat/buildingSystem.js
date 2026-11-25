@@ -1,0 +1,901 @@
+/**
+ * Tactical Construction & Allied Defense System (Fortnite / Rust inspired):
+ *  - Grid-snapped Building Mode [C]: Tactical Walls, Embrasure Window Walls, Walkable Ramps,
+ *    Pure-Polymer Sentry Turrets, and Heavy 6-Barrel Gatling Defense Emplacements.
+ *  - 4 Wall Attachments [U]: Armor Plate (MVK), Electric Shock Spikes, Polymer Holo-Shield, Wall-Mounted Gatling.
+ *  - Allied Turrets AI with exact Line-of-Sight checks and rotating 3D barrels.
+ */
+(function (global) {
+    'use strict';
+
+    const XB = (global.XB = global.XB || {});
+
+    class BuildingSystem {
+        constructor(scene, camera, mapBuilder, enemySystem, soundEngine) {
+            this.scene = scene;
+            this.camera = camera;
+            this.map = mapBuilder;
+            this.enemies = enemySystem;
+            this.sound = soundEngine;
+
+            this.buildMode = false;
+            this.selectedBlueprintIdx = 0;
+            this.buildRotation = 0; // 0..3 (x 90 deg)
+            this.selectedAttachmentId = 'armor_plate';
+
+            this.unlockedWallAttachments = new Set(['armor_plate', 'shock_spikes']);
+            this.wallHpLvl = 1;
+            this.maxTurrets = 4;
+
+            this.structures = [];
+            this.turrets = [];
+            this.hoveredStructure = null;
+
+            this.previewValid = false;
+            this.previewPos = new THREE.Vector3();
+            this.previewGroup = new THREE.Group();
+            this.previewMesh = null;
+            this.previewMat = new THREE.MeshBasicMaterial({
+                color: 0x4ade80,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.72
+            });
+            this.previewFillMat = new THREE.MeshBasicMaterial({
+                color: 0x4ade80,
+                transparent: true,
+                opacity: 0.22,
+                depthWrite: false
+            });
+            this.previewGroup.visible = false;
+            this.scene.add(this.previewGroup);
+
+            this._forward = new THREE.Vector3();
+            this._rebuildPreviewMesh();
+        }
+
+        reset() {
+            this.buildMode = false;
+            this.selectedBlueprintIdx = 0;
+            this.buildRotation = 0;
+            this.selectedAttachmentId = 'armor_plate';
+            this.unlockedWallAttachments = new Set(['armor_plate', 'shock_spikes']);
+            this.wallHpLvl = 1;
+            this.maxTurrets = 4;
+
+            for (const s of this.structures) {
+                this.scene.remove(s.group);
+            }
+            this.structures = [];
+
+            for (const t of this.turrets) {
+                this.scene.remove(t.group);
+            }
+            this.turrets = [];
+            this.hoveredStructure = null;
+            this.previewGroup.visible = false;
+            this.map.clearDynamicStructures();
+            this._rebuildPreviewMesh();
+        }
+
+        toggleBuildMode(forceState) {
+            this.buildMode = (forceState !== undefined) ? Boolean(forceState) : !this.buildMode;
+            this.previewGroup.visible = this.buildMode;
+            if (this.buildMode) {
+                this._rebuildPreviewMesh();
+            }
+            return this.buildMode;
+        }
+
+        selectBlueprint(idx) {
+            if (idx < 0 || idx >= XB.BUILD_BLUEPRINTS.length) return;
+            this.selectedBlueprintIdx = idx;
+            this._rebuildPreviewMesh();
+        }
+
+        rotateBlueprint() {
+            this.buildRotation = (this.buildRotation + 1) % 4;
+            this.sound.playWheelTick();
+        }
+
+        cycleWallAttachment() {
+            const unlockedList = XB.WALL_ATTACHMENTS.filter(a => this.unlockedWallAttachments.has(a.id));
+            if (unlockedList.length === 0) return null;
+            const curIdx = unlockedList.findIndex(a => a.id === this.selectedAttachmentId);
+            const next = unlockedList[(curIdx + 1) % unlockedList.length];
+            this.selectedAttachmentId = next.id;
+            this.sound.playWheelTick();
+            return next;
+        }
+
+        _rebuildPreviewMesh() {
+            while (this.previewGroup.children.length > 0) {
+                const c = this.previewGroup.children[0];
+                this.previewGroup.remove(c);
+                if (c.geometry) c.geometry.dispose();
+            }
+            const bp = XB.BUILD_BLUEPRINTS[this.selectedBlueprintIdx];
+            if (!bp) return;
+
+            let geo;
+            if (bp.id === 'ramp') {
+                geo = new THREE.BoxGeometry(bp.width, 0.36, Math.hypot(bp.depth, bp.height));
+                const m1 = new THREE.Mesh(geo, this.previewMat);
+                const m2 = new THREE.Mesh(geo, this.previewFillMat);
+                const slopeAng = Math.atan2(bp.height, bp.depth);
+                m1.rotation.x = slopeAng;
+                m2.rotation.x = slopeAng;
+                m1.position.y = bp.height * 0.5;
+                m2.position.y = bp.height * 0.5;
+                this.previewGroup.add(m1, m2);
+                return;
+            }
+            if (bp.id === 'bunker_post') {
+                // U-shaped Armored Bunker with Front Embrasure + Protective Roof (open at +Z rear!)
+                const frontLower = new THREE.Mesh(new THREE.BoxGeometry(bp.width, 1.25, 0.8), this.previewFillMat);
+                frontLower.position.set(0, 0.625, -bp.depth / 2 + 0.4);
+                const roof = new THREE.Mesh(new THREE.BoxGeometry(bp.width, 0.45, bp.depth), this.previewMat);
+                roof.position.set(0, bp.height - 0.22, 0);
+                const sideL = new THREE.Mesh(new THREE.BoxGeometry(0.75, bp.height, bp.depth), this.previewFillMat);
+                sideL.position.set(-bp.width / 2 + 0.38, bp.height / 2, 0);
+                const sideR = sideL.clone();
+                sideR.position.x = bp.width / 2 - 0.38;
+                this.previewGroup.add(frontLower, roof, sideL, sideR);
+                return;
+            }
+            if (bp.isTurret) {
+                geo = new THREE.CylinderGeometry(0.65, 0.95, 1.85, 10);
+                const m1 = new THREE.Mesh(geo, this.previewMat);
+                const m2 = new THREE.Mesh(geo, this.previewFillMat);
+                m1.position.y = 0.95;
+                m2.position.y = 0.95;
+                this.previewGroup.add(m1, m2);
+                return;
+            }
+
+            geo = new THREE.BoxGeometry(bp.width, bp.height, bp.depth);
+            const m1 = new THREE.Mesh(geo, this.previewMat);
+            const m2 = new THREE.Mesh(geo, this.previewFillMat);
+            m1.position.y = bp.height / 2;
+            m2.position.y = bp.height / 2;
+            this.previewGroup.add(m1, m2);
+        }
+
+        _computePlacementPose(playerPos) {
+            this.camera.getWorldDirection(this._forward);
+            const flatFwd = new THREE.Vector3(this._forward.x, 0, this._forward.z);
+            if (flatFwd.lengthSq() < 0.001) flatFwd.set(0, 0, -1);
+            flatFwd.normalize();
+
+            const dist = Math.max(4.6, Math.min(9.5, 6.8 - this._forward.y * 2.5));
+            const rawX = playerPos.x + flatFwd.x * dist;
+            const rawZ = playerPos.z + flatFwd.z * dist;
+
+            const bp = XB.BUILD_BLUEPRINTS[this.selectedBlueprintIdx];
+            const snapSize = bp.isTurret ? 1.5 : 2.3;
+            const sx = Math.round(rawX / snapSize) * snapSize;
+            const sz = Math.round(rawZ / snapSize) * snapSize;
+
+            const playerYawCard = Math.round(-Math.atan2(flatFwd.x, -flatFwd.z) / (Math.PI / 2));
+            const rotIdx = ((playerYawCard + this.buildRotation) % 4 + 4) % 4;
+            const rotY = rotIdx * (Math.PI / 2);
+
+            // Stack on elevated floor or existing wall top if aiming slightly high!
+            const probeY = playerPos.y + Math.max(0.2, this._forward.y * 4.0 + 0.6);
+            let sy = this.map.getFloorHeightAt(sx, sz, probeY + 0.6);
+            if (!bp.isTurret && this._forward.y > 0.2) {
+                for (const st of this.structures) {
+                    if (st.type !== 'ramp' && Math.hypot(st.x - sx, st.z - sz) < 2.2) {
+                        sy = Math.max(sy, st.y + st.height);
+                    }
+                }
+            }
+            if (sy > 8.2) sy = 8.0;
+
+            return { x: sx, y: sy, z: sz, rotIdx, rotY };
+        }
+
+        _findHoveredStructure(playerPos, playerEyeH) {
+            const origin = new THREE.Vector3(playerPos.x, playerPos.y + playerEyeH, playerPos.z);
+            this.camera.getWorldDirection(this._forward);
+            let best = null;
+            let bestDist = 11.5;
+
+            for (const st of this.structures) {
+                const center = new THREE.Vector3(st.x, st.y + 1.5, st.z);
+                const toC = center.sub(origin);
+                const d = toC.length();
+                if (d > bestDist || d < 0.8) continue;
+                const dot = toC.normalize().dot(this._forward);
+                if (dot > 0.84) {
+                    bestDist = d;
+                    best = st;
+                }
+            }
+            return best;
+        }
+
+        updatePreviewAndHovered(playerPos, playerEyeH, gameCtx) {
+            this.hoveredStructure = this._findHoveredStructure(playerPos, playerEyeH);
+
+            if (!this.buildMode) {
+                this.previewGroup.visible = false;
+                return;
+            }
+
+            const bp = XB.BUILD_BLUEPRINTS[this.selectedBlueprintIdx];
+            const pose = this._computePlacementPose(playerPos);
+            this.previewPos.set(pose.x, pose.y, pose.z);
+            this.previewGroup.position.copy(this.previewPos);
+            this.previewGroup.rotation.y = pose.rotY;
+            this.previewGroup.visible = true;
+
+            const insideBounds = Math.abs(pose.x) < this.map.ARENA_LIMIT_X - 3 && Math.abs(pose.z) < this.map.ARENA_LIMIT_Z - 3;
+            const farFromPlayer = Math.hypot(pose.x - playerPos.x, pose.z - playerPos.z) > 2.2;
+            const canAfford = gameCtx.coins >= bp.costCoins && gameCtx.combat.polymerEnergy >= bp.costPoly;
+            const turretRoom = !bp.isTurret || this.turrets.length < this.maxTurrets;
+
+            this.previewValid = insideBounds && farFromPlayer && canAfford && turretRoom;
+            const c = this.previewValid ? (bp.color || 0x4ade80) : 0xf43f5e;
+            this.previewMat.color.setHex(c);
+            this.previewFillMat.color.setHex(c);
+        }
+
+        tryPlaceCurrentBlueprint(playerPos, gameCtx) {
+            const bp = XB.BUILD_BLUEPRINTS[this.selectedBlueprintIdx];
+            if (!bp) return false;
+
+            const pose = this._computePlacementPose(playerPos);
+            if (Math.abs(pose.x) >= this.map.ARENA_LIMIT_X - 3 || Math.abs(pose.z) >= this.map.ARENA_LIMIT_Z - 3) {
+                gameCtx.showToast('НЕЛЬЗЯ СТРОИТЬ ЗА ГРАНИЦЕЙ АРЕНЫ!', '#fb7185');
+                return false;
+            }
+            if (Math.hypot(pose.x - playerPos.x, pose.z - playerPos.z) <= 1.8) {
+                gameCtx.showToast('ОТОЙДИТЕ ЧУТЬ ДАЛЬШЕ ДЛЯ ПОСТРОЙКИ!', '#fb7185');
+                return false;
+            }
+            if (gameCtx.coins < bp.costCoins) {
+                gameCtx.showToast(`НУЖНО ${bp.costCoins} МОНЕТ!`, '#f59e0b');
+                return false;
+            }
+            if (gameCtx.combat.polymerEnergy < bp.costPoly) {
+                gameCtx.showToast(`НУЖНО ${bp.costPoly} ПОЛИМЕРА!`, '#f59e0b');
+                return false;
+            }
+            if (bp.isTurret && this.turrets.length >= this.maxTurrets) {
+                gameCtx.showToast(`ЛИМИТ ТУРЕЛЕЙ: ${this.maxTurrets} (РАСШИРЬТЕ В МАГАЗИНЕ)`, '#fb7185');
+                return false;
+            }
+
+            gameCtx.spendResources(bp.costCoins, bp.costPoly);
+            this.sound.playBuildPlace();
+
+            if (bp.isTurret) {
+                const kind = bp.id === 'gatling_turret' ? 'gatling' : 'polymer';
+                const dur = bp.permanent ? Infinity : bp.duration;
+                this.spawnTurret(kind, pose.x, pose.y, pose.z, dur, gameCtx, null, Boolean(bp.permanent));
+                gameCtx.showToast(`СОЗДАНО${bp.permanent ? ' (ПОСТОЯННО)' : ''}: ${bp.shortName}`, bp.id === 'gatling_turret' ? '#f97316' : '#4ade80');
+                return true;
+            }
+
+            this._buildFortStructure(bp, pose.x, pose.y, pose.z, pose.rotIdx, pose.rotY);
+            gameCtx.showToast(`ПОСТРОЕНО ПОСТОЯННО: ${bp.shortName}`, '#4ade80');
+            return true;
+        }
+
+        /**
+         * Restores full HP to all permanent Coin-crafted fortifications & Gatling turrets after every wave!
+         */
+        repairAllPermanentStructures() {
+            let repaired = 0;
+            for (const st of this.structures) {
+                if (st.hp < st.maxHp) {
+                    st.hp = st.maxHp;
+                    repaired++;
+                }
+            }
+            for (const t of this.turrets) {
+                if (t.permanent && t.hp < t.maxHp) {
+                    t.hp = t.maxHp;
+                    repaired++;
+                }
+            }
+            return repaired;
+        }
+
+        _buildFortStructure(bp, x, y, z, rotIdx, rotY) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+            group.rotation.y = rotY;
+
+            const baseMat = new THREE.MeshStandardMaterial({ color: 0x162b22, metalness: 0.72, roughness: 0.35 });
+            const frameMat = new THREE.MeshStandardMaterial({ color: 0x0b1712, metalness: 0.85, roughness: 0.25 });
+            const trimMat = new THREE.MeshBasicMaterial({ color: bp.color });
+
+            const hpBonus = 1 + (this.wallHpLvl - 1) * 0.22;
+            const maxHp = Math.round(bp.hp * hpBonus);
+            const structObj = {
+                id: `st_${Date.now()}_${Math.random()}`,
+                type: bp.id,
+                x,
+                y,
+                z,
+                rotIdx,
+                rotY,
+                height: bp.height,
+                hp: maxHp,
+                maxHp,
+                group,
+                baseMat,
+                attachments: new Set(),
+                boxes: [],
+                rampRef: null,
+                coverMeshes: [],
+                mountedTurret: null
+            };
+
+            const rotated90 = (rotIdx % 2 === 1);
+            const worldW = rotated90 ? bp.depth : bp.width;
+            const worldD = rotated90 ? bp.width : bp.depth;
+
+            if (bp.id === 'ramp') {
+                const slopeLen = Math.hypot(bp.depth, bp.height);
+                const slopeAngle = Math.atan2(bp.height, bp.depth);
+                const deck = new THREE.Mesh(new THREE.BoxGeometry(bp.width, 0.34, slopeLen), baseMat);
+                deck.position.set(0, bp.height / 2, 0);
+                deck.rotation.x = slopeAngle;
+                deck.castShadow = true;
+                deck.receiveShadow = true;
+                deck.userData.isCover = true;
+                deck.userData.craftedStructure = structObj;
+
+                const railL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.22, slopeLen), trimMat);
+                railL.position.set(-bp.width / 2 + 0.14, bp.height / 2 + 0.16, 0);
+                railL.rotation.x = slopeAngle;
+                const railR = railL.clone();
+                railR.position.x = bp.width / 2 - 0.14;
+
+                const supportL = new THREE.Mesh(new THREE.BoxGeometry(0.28, bp.height, 0.35), frameMat);
+                supportL.position.set(-bp.width / 2 + 0.2, bp.height / 2, -bp.depth / 2 + 0.25);
+                const supportR = supportL.clone();
+                supportR.position.x = bp.width / 2 - 0.2;
+
+                group.add(deck, railL, railR, supportL, supportR);
+                this.scene.add(group);
+
+                this.map.dynamicCoverMeshes.push(deck, supportL, supportR);
+                structObj.coverMeshes.push(deck, supportL, supportR);
+
+                // Register actual walkable ramp oriented smoothly across all 4 rotations!
+                // Note: rotIdx 0 (-Z is up/forward relative to player look? Wait: deck.rotation.x = +slopeAngle lifts -Z end UP!
+                // Wait: rotation.x > 0 rotates +Y -> +Z and -Z -> +Y! Let's verify: (0,0,-L/2) around X by +a goes to (0, +sin(a)*L/2, -cos(a)*L/2)! Yes, -Z is HIGH, +Z is LOW ('N' direction in MapBuilder!)
+                let dir = 'N';
+                if (rotIdx === 0) dir = 'N';
+                else if (rotIdx === 1) dir = 'W';
+                else if (rotIdx === 2) dir = 'S';
+                else dir = 'E';
+
+                const rxW = (dir === 'E' || dir === 'W') ? bp.depth : bp.width;
+                const rzD = (dir === 'E' || dir === 'W') ? bp.width : bp.depth;
+                const rampData = {
+                    minX: x - rxW / 2,
+                    maxX: x + rxW / 2,
+                    minZ: z - rzD / 2,
+                    maxZ: z + rzD / 2,
+                    yBase: y,
+                    axis: (dir === 'N' || dir === 'S') ? 'z' : 'x',
+                    yAtMin: (dir === 'N' || dir === 'W') ? (y + bp.height) : y,
+                    yAtMax: (dir === 'N' || dir === 'W') ? y : (y + bp.height),
+                    structureRef: structObj
+                };
+                this.map.dynamicRamps.push(rampData);
+                structObj.rampRef = rampData;
+                this.structures.push(structObj);
+                return;
+            }
+
+            if (bp.id === 'window_wall') {
+                // Lower wall (0..1.35m), Left & Right pillars (1.35..2.35m), Top lintel (2.35..3.4m) — REAL open shooting window!
+                const lower = new THREE.Mesh(new THREE.BoxGeometry(bp.width, 1.35, bp.depth), baseMat);
+                lower.position.y = 0.675;
+                const leftP = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2.05, bp.depth), frameMat);
+                leftP.position.set(-bp.width / 2 + 0.5, 2.375, 0);
+                const rightP = leftP.clone();
+                rightP.position.x = bp.width / 2 - 0.5;
+                const topBeam = new THREE.Mesh(new THREE.BoxGeometry(bp.width, 0.9, bp.depth), baseMat);
+                topBeam.position.y = 2.95;
+                const strip = new THREE.Mesh(new THREE.BoxGeometry(bp.width + 0.08, 0.14, bp.depth + 0.08), trimMat);
+                strip.position.y = 1.36;
+
+                group.add(lower, leftP, rightP, topBeam, strip);
+                [lower, leftP, rightP, topBeam].forEach(m => {
+                    m.castShadow = true;
+                    m.receiveShadow = true;
+                    m.userData.isCover = true;
+                    m.userData.craftedStructure = structObj;
+                    this.map.dynamicCoverMeshes.push(m);
+                    structObj.coverMeshes.push(m);
+                });
+
+                const makeSubBox = (lx, lyCenter, lz, lw, lh, ld, navSolid, jumpable = false) => {
+                    const cosR = Math.round(Math.cos(rotY));
+                    const sinR = Math.round(Math.sin(rotY));
+                    const wx = lx * cosR + lz * sinR;
+                    const wz = -lx * sinR + lz * cosR;
+                    const bw = rotated90 ? ld : lw;
+                    const bd = rotated90 ? lw : ld;
+                    const box = {
+                        minX: x + wx - bw / 2,
+                        maxX: x + wx + bw / 2,
+                        minY: y + lyCenter - lh / 2,
+                        maxY: y + lyCenter + lh / 2,
+                        minZ: z + wz - bd / 2,
+                        maxZ: z + wz + bd / 2,
+                        jumpable,
+                        navSolid,
+                        structureRef: structObj
+                    };
+                    this.map.dynamicBoxes.push(box);
+                    structObj.boxes.push(box);
+                };
+
+                makeSubBox(0, 0.675, 0, bp.width, 1.35, bp.depth, true);
+                makeSubBox(-bp.width / 2 + 0.5, 2.375, 0, 1.0, 2.05, bp.depth, true);
+                makeSubBox(bp.width / 2 - 0.5, 2.375, 0, 1.0, 2.05, bp.depth, true);
+                makeSubBox(0, 2.95, 0, bp.width, 0.9, bp.depth, false);
+            } else if (bp.id === 'bunker_post') {
+                // Full Walk-In Permanent Bunker Installation ("БРОНЕ-ПОСТ ДОТ")!
+                // Front lower armor shield (0..1.28m) lets standing players shoot & crouch [Ctrl] cleanly behind cover!
+                const wallT = 0.72;
+                const frontZ = -bp.depth / 2 + wallT / 2;
+                const fLow = new THREE.Mesh(new THREE.BoxGeometry(bp.width, 1.28, wallT), baseMat);
+                fLow.position.set(0, 0.64, frontZ);
+                const fTrim = new THREE.Mesh(new THREE.BoxGeometry(bp.width + 0.08, 0.14, wallT + 0.08), trimMat);
+                fTrim.position.set(0, 1.28, frontZ);
+                const fTop = new THREE.Mesh(new THREE.BoxGeometry(bp.width, 0.88, wallT), frameMat);
+                fTop.position.set(0, bp.height - 0.44, frontZ);
+
+                const roof = new THREE.Mesh(new THREE.BoxGeometry(bp.width, 0.44, bp.depth), frameMat);
+                roof.position.set(0, bp.height - 0.22, 0);
+
+                const sideL = new THREE.Mesh(new THREE.BoxGeometry(wallT, bp.height, bp.depth), baseMat);
+                sideL.position.set(-bp.width / 2 + wallT / 2, bp.height / 2, 0);
+                const sideR = sideL.clone();
+                sideR.position.x = bp.width / 2 - wallT / 2;
+
+                // Rear doorframe pilasters (leaves generous 3.6m center back doorway open to walk/bhop in!)
+                const rearZ = bp.depth / 2 - wallT / 2;
+                const backL = new THREE.Mesh(new THREE.BoxGeometry(0.95, bp.height, wallT), frameMat);
+                backL.position.set(-bp.width / 2 + 0.48, bp.height / 2, rearZ);
+                const backR = backL.clone();
+                backR.position.x = bp.width / 2 - 0.48;
+
+                // Interior warm emerald tactical lamp bar under bunker roof
+                const lamp = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 0.35), trimMat);
+                lamp.position.set(0, bp.height - 0.48, 0);
+
+                group.add(fLow, fTrim, fTop, roof, sideL, sideR, backL, backR, lamp);
+                [fLow, fTop, roof, sideL, sideR, backL, backR].forEach(m => {
+                    m.castShadow = true;
+                    m.receiveShadow = true;
+                    m.userData.isCover = true;
+                    m.userData.craftedStructure = structObj;
+                    this.map.dynamicCoverMeshes.push(m);
+                    structObj.coverMeshes.push(m);
+                });
+
+                const makeLocalBox = (lx, lyCenter, lz, lw, lh, ld, navSolid, jumpable = false) => {
+                    const cosR = Math.round(Math.cos(rotY));
+                    const sinR = Math.round(Math.sin(rotY));
+                    const wx = lx * cosR + lz * sinR;
+                    const wz = -lx * sinR + lz * cosR;
+                    const bw = rotated90 ? ld : lw;
+                    const bd = rotated90 ? lw : ld;
+                    const box = {
+                        minX: x + wx - bw / 2,
+                        maxX: x + wx + bw / 2,
+                        minY: y + lyCenter - lh / 2,
+                        maxY: y + lyCenter + lh / 2,
+                        minZ: z + wz - bd / 2,
+                        maxZ: z + wz + bd / 2,
+                        jumpable,
+                        navSolid,
+                        structureRef: structObj
+                    };
+                    this.map.dynamicBoxes.push(box);
+                    structObj.boxes.push(box);
+                };
+
+                // Front lower crouch-cover shield + upper lintel + roof + left/right flank walls + rear framing
+                makeLocalBox(0, 0.64, frontZ, bp.width, 1.28, wallT, true, true);
+                makeLocalBox(0, bp.height - 0.44, frontZ, bp.width, 0.88, wallT, false, false);
+                makeLocalBox(0, bp.height - 0.22, 0, bp.width, 0.44, bp.depth, false, true);
+                makeLocalBox(-bp.width / 2 + wallT / 2, bp.height / 2, 0, wallT, bp.height, bp.depth, true, false);
+                makeLocalBox( bp.width / 2 - wallT / 2, bp.height / 2, 0, wallT, bp.height, bp.depth, true, false);
+                makeLocalBox(-bp.width / 2 + 0.48, bp.height / 2, rearZ, 0.95, bp.height, wallT, true, false);
+                makeLocalBox( bp.width / 2 - 0.48, bp.height / 2, rearZ, 0.95, bp.height, wallT, true, false);
+            } else {
+                // Solid Tactical Wall (stackable!)
+                const wallMesh = new THREE.Mesh(new THREE.BoxGeometry(bp.width, bp.height, bp.depth), baseMat);
+                wallMesh.position.y = bp.height / 2;
+                wallMesh.castShadow = true;
+                wallMesh.receiveShadow = true;
+                wallMesh.userData.isCover = true;
+                wallMesh.userData.craftedStructure = structObj;
+
+                const pillarL = new THREE.Mesh(new THREE.BoxGeometry(0.45, bp.height + 0.1, bp.depth + 0.25), frameMat);
+                pillarL.position.set(-bp.width / 2 + 0.22, bp.height / 2, 0);
+                const pillarR = pillarL.clone();
+                pillarR.position.x = bp.width / 2 - 0.22;
+                const trim = new THREE.Mesh(new THREE.BoxGeometry(bp.width + 0.08, 0.16, bp.depth + 0.12), trimMat);
+                trim.position.y = bp.height - 0.18;
+
+                group.add(wallMesh, pillarL, pillarR, trim);
+                [wallMesh, pillarL, pillarR].forEach(m => {
+                    m.userData.isCover = true;
+                    m.userData.craftedStructure = structObj;
+                    this.map.dynamicCoverMeshes.push(m);
+                    structObj.coverMeshes.push(m);
+                });
+
+                const box = {
+                    minX: x - worldW / 2,
+                    maxX: x + worldW / 2,
+                    minY: y,
+                    maxY: y + bp.height,
+                    minZ: z - worldD / 2,
+                    maxZ: z + worldD / 2,
+                    jumpable: true,
+                    navSolid: true,
+                    structureRef: structObj
+                };
+                this.map.dynamicBoxes.push(box);
+                structObj.boxes.push(box);
+            }
+
+            this.scene.add(group);
+            this.structures.push(structObj);
+            this.map.refreshNavWithDynamics();
+        }
+
+        /**
+         * Rust-style Wall Attachment Application [U] when aiming at a player-built wall!
+         */
+        tryAttachModToHoveredWall(gameCtx) {
+            const st = this.hoveredStructure;
+            if (!st) {
+                gameCtx.showToast('НАВЕДИТЕ ПРИЦЕЛ НА СВОЮ СТЕНУ ДЛЯ ОБВЕСА [U]', '#94a3b8');
+                return false;
+            }
+            const attId = this.selectedAttachmentId;
+            if (!this.unlockedWallAttachments.has(attId)) {
+                gameCtx.showToast('ОТКРОЙТЕ ЭТОТ ОБВЕС В МАГАЗИНЕ [B]!', '#f59e0b');
+                return false;
+            }
+            const cfg = XB.WALL_ATTACHMENTS.find(a => a.id === attId);
+            if (!cfg) return false;
+            if (st.attachments.has(attId)) {
+                gameCtx.showToast(`НА ЭТОЙ СТЕНЕ УЖЕ ЕСТЬ: ${cfg.shortName}`, '#94a3b8');
+                return false;
+            }
+            if (gameCtx.coins < cfg.applyCoins) {
+                gameCtx.showToast(`НУЖНО ${cfg.applyCoins} МОНЕТ НА УСТАНОВКУ!`, '#f59e0b');
+                return false;
+            }
+
+            gameCtx.spendResources(cfg.applyCoins, 0);
+            st.attachments.add(attId);
+            this.sound.playBuildUpgrade();
+
+            if (attId === 'armor_plate') {
+                st.maxHp += cfg.hpBonus;
+                st.hp += cfg.hpBonus;
+                st.baseMat.color.setHex(0x334155);
+                const plate = new THREE.Mesh(
+                    new THREE.BoxGeometry(4.75, 0.55, 1.05),
+                    new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.9, roughness: 0.2 })
+                );
+                plate.position.y = st.height * 0.48;
+                st.group.add(plate);
+            } else if (attId === 'shock_spikes') {
+                const spikeMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+                for (let sx = -1.8; sx <= 1.8; sx += 0.72) {
+                    [-0.52, 0.52].forEach(sz => {
+                        const sp = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.55, 5), spikeMat);
+                        sp.rotation.x = sz < 0 ? -Math.PI / 2 : Math.PI / 2;
+                        sp.position.set(sx, 0.95, sz);
+                        st.group.add(sp);
+                    });
+                }
+            } else if (attId === 'shield_screen') {
+                const rotated90 = (st.rotIdx % 2 === 1);
+                const w = 4.6, h = 2.0, d = 0.25;
+                const shieldPane = new THREE.Mesh(
+                    new THREE.BoxGeometry(w, h, d),
+                    new THREE.MeshBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.34 })
+                );
+                shieldPane.position.y = st.height + 1.0;
+                shieldPane.userData.isFriendlyShield = true;
+                st.group.add(shieldPane);
+
+                const bw = rotated90 ? d : w;
+                const bd = rotated90 ? w : d;
+                const sBox = {
+                    minX: st.x - bw / 2,
+                    maxX: st.x + bw / 2,
+                    minY: st.y + st.height,
+                    maxY: st.y + st.height + h,
+                    minZ: st.z - bd / 2,
+                    maxZ: st.z + bd / 2,
+                    jumpable: false,
+                    navSolid: false,
+                    isShieldScreen: true,
+                    structureRef: st
+                };
+                this.map.dynamicBoxes.push(sBox);
+                st.boxes.push(sBox);
+            } else if (attId === 'wall_gatling') {
+                const tObj = this.spawnTurret('gatling_mini', st.x, st.y + st.height, st.z, 9999, gameCtx);
+                st.mountedTurret = tObj;
+            }
+
+            gameCtx.showToast(`УСТАНОВЛЕН ОБВЕС: ${cfg.name}`, cfg.color);
+            return true;
+        }
+
+        damageStructure(struct, damage, attacker, combatCtx) {
+            if (!struct || struct.hp <= 0) return false;
+            struct.hp -= damage;
+
+            if (attacker && struct.attachments.has('shock_spikes')) {
+                attacker.shockTimer = Math.max(attacker.shockTimer, 1.8);
+                const hitPt = attacker.group.position.clone().add(new THREE.Vector3(0, 1.4, 0));
+                if (typeof combatCtx.onDamageAlien === 'function') {
+                    combatCtx.onDamageAlien(attacker, 42, hitPt, 0x38bdf8, false);
+                } else if (combatCtx.combat && typeof combatCtx.combat.damageAlien === 'function') {
+                    combatCtx.combat.damageAlien(attacker, 42, hitPt, 0x38bdf8, false, 1.75, combatCtx);
+                }
+            }
+
+            if (struct.hp <= 0) {
+                this._destroyStructure(struct);
+                return true;
+            }
+            return false;
+        }
+
+        _destroyStructure(struct) {
+            const idx = this.structures.indexOf(struct);
+            if (idx !== -1) this.structures.splice(idx, 1);
+
+            if (struct.mountedTurret) {
+                const ti = this.turrets.indexOf(struct.mountedTurret);
+                if (ti !== -1) {
+                    this.scene.remove(struct.mountedTurret.group);
+                    this.turrets.splice(ti, 1);
+                }
+            }
+
+            const boxSet = new Set(struct.boxes);
+            this.map.dynamicBoxes = this.map.dynamicBoxes.filter(b => !boxSet.has(b));
+            if (struct.rampRef) {
+                this.map.dynamicRamps = this.map.dynamicRamps.filter(r => r !== struct.rampRef);
+            }
+            const meshSet = new Set(struct.coverMeshes);
+            this.map.dynamicCoverMeshes = this.map.dynamicCoverMeshes.filter(m => !meshSet.has(m));
+
+            this.scene.remove(struct.group);
+            this.map.refreshNavWithDynamics();
+        }
+
+        // =====================================================================
+        // ALLIED TURRETS (POLYMER TURRET + HEAVY GATLING EMPLACEMENT!)
+        // =====================================================================
+        spawnTurret(kind, x, y, z, duration, gameCtx, customStats = null, isPermanent = false) {
+            const isGatling = (kind === 'gatling' || kind === 'gatling_mini');
+            const isMini = (kind === 'gatling_mini');
+            const permanent = Boolean(isPermanent || isMini || !Number.isFinite(duration));
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+
+            const steelMat = new THREE.MeshStandardMaterial({ color: 0x0f1f18, metalness: 0.85, roughness: 0.26 });
+            const bodyMat = new THREE.MeshStandardMaterial({
+                color: isGatling ? 0x2a1d12 : 0x133829,
+                metalness: 0.72,
+                roughness: 0.34
+            });
+            const glowMat = new THREE.MeshBasicMaterial({ color: isGatling ? 0xf97316 : 0x4ade80 });
+
+            // Heavy tripod legs
+            for (let k = 0; k < 3; k++) {
+                const ang = (k / 3) * Math.PI * 2;
+                const leg = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.95, 0.18), steelMat);
+                leg.position.set(Math.cos(ang) * 0.44, 0.42, Math.sin(ang) * 0.44);
+                leg.rotation.z = Math.cos(ang) * 0.42;
+                leg.rotation.x = -Math.sin(ang) * 0.42;
+                group.add(leg);
+            }
+
+            const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.42, 0.55, 10), steelMat);
+            pedestal.position.y = 0.78;
+            group.add(pedestal);
+
+            const headPivot = new THREE.Group();
+            headPivot.position.y = 1.24;
+            group.add(headPivot);
+
+            const housing = new THREE.Mesh(new THREE.BoxGeometry(isGatling ? 0.7 : 0.56, 0.44, 0.72), bodyMat);
+            const opticEye = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), glowMat);
+            opticEye.position.set(0, 0.25, 0.24);
+            headPivot.add(housing, opticEye);
+
+            let barrelCluster = null;
+            if (isGatling) {
+                const gunShield = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.95, 0.58, 0.1),
+                    new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.3 })
+                );
+                gunShield.position.set(0, 0.08, 0.38);
+                headPivot.add(gunShield);
+
+                const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.36, 12), steelMat);
+                drum.rotation.z = Math.PI / 2;
+                drum.position.set(-0.36, -0.05, 0.02);
+                headPivot.add(drum);
+
+                barrelCluster = new THREE.Group();
+                barrelCluster.position.set(0, 0, 0.85);
+                const bGeo = new THREE.CylinderGeometry(0.024, 0.024, 0.95, 6);
+                bGeo.rotateX(Math.PI / 2);
+                for (let i = 0; i < 6; i++) {
+                    const ang = (i / 6) * Math.PI * 2;
+                    const bar = new THREE.Mesh(bGeo, steelMat);
+                    bar.position.set(Math.cos(ang) * 0.09, Math.sin(ang) * 0.09, 0);
+                    barrelCluster.add(bar);
+                }
+                const tipRing = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.02, 6, 14), glowMat);
+                tipRing.position.z = 0.42;
+                barrelCluster.add(tipRing);
+                headPivot.add(barrelCluster);
+            } else {
+                // Twin-barrel Polymer Plasma Sentry!
+                [-0.16, 0.16].forEach(bx => {
+                    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.068, 0.82, 8), steelMat);
+                    bar.rotation.x = Math.PI / 2;
+                    bar.position.set(bx, 0, 0.56);
+                    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.65, 8), glowMat);
+                    core.rotation.x = Math.PI / 2;
+                    core.position.set(bx, 0.06, 0.42);
+                    headPivot.add(bar, core);
+                });
+                const holoHalo = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.03, 6, 20), glowMat);
+                holoHalo.rotation.x = Math.PI / 2;
+                holoHalo.position.y = 0.45;
+                group.add(holoHalo);
+            }
+
+            if (isMini) group.scale.setScalar(0.84);
+            this.scene.add(group);
+
+            const dmg = customStats ? customStats.damage : (isGatling ? (isMini ? 22 : 30) : 34);
+            const fireInterval = customStats ? customStats.fireRate : (isGatling ? (isMini ? 0.11 : 0.068) : 0.26);
+            const range = customStats ? customStats.range : (isGatling ? 46 : 38);
+
+            const tObj = {
+                kind,
+                isGatling,
+                permanent,
+                group,
+                headPivot,
+                barrelCluster,
+                x,
+                y,
+                z,
+                hp: isGatling ? 980 : 420,
+                maxHp: isGatling ? 980 : 420,
+                life: permanent ? Infinity : duration,
+                maxLife: permanent ? Infinity : duration,
+                fireTimer: 0.15,
+                fireInterval,
+                damage: dmg,
+                range,
+                spinVel: 0,
+                color: isGatling ? 0xf97316 : 0x4ade80
+            };
+
+            // Respect max temporary turret cap without ever evicting permanent Coin-built Gatlings!
+            const maxAllowed = this.maxTurrets + 2;
+            while (this.turrets.filter(t => !t.permanent).length > maxAllowed) {
+                const tempIdx = this.turrets.findIndex(t => !t.permanent);
+                if (tempIdx === -1) break;
+                const old = this.turrets.splice(tempIdx, 1)[0];
+                this.scene.remove(old.group);
+            }
+            this.turrets.push(tObj);
+            return tObj;
+        }
+
+        update(dt, combat, gameCtx) {
+            const muzzleWorld = new THREE.Vector3();
+            for (let i = this.turrets.length - 1; i >= 0; i--) {
+                const t = this.turrets[i];
+                if (!t.permanent && Number.isFinite(t.life)) {
+                    t.life -= dt;
+                }
+                if ((!t.permanent && t.life <= 0) || t.hp <= 0) {
+                    combat._spawnParticles(new THREE.Vector3(t.x, t.y + 1.0, t.z), t.color, 12, 8);
+                    this.scene.remove(t.group);
+                    this.turrets.splice(i, 1);
+                    continue;
+                }
+
+                // Shield Screen Passive Proximity Regen
+                const headOrigin = new THREE.Vector3(t.x, t.y + 1.35, t.z);
+
+                // Acquire nearest visible live alien
+                let target = null;
+                let bestDist = t.range;
+                for (const a of this.enemies.aliens) {
+                    if (a.dying || a.hp <= 0) continue;
+                    const aCenter = a.group.position.clone().add(new THREE.Vector3(0, 1.35 * a.baseScale, 0));
+                    const d = headOrigin.distanceTo(aCenter);
+                    if (d < bestDist && this.map.hasLineOfSight(headOrigin.x, headOrigin.y, headOrigin.z, aCenter.x, aCenter.y, aCenter.z)) {
+                        bestDist = d;
+                        target = a;
+                    }
+                }
+
+                if (target) {
+                    const aCenter = target.group.position.clone().add(new THREE.Vector3(0, 1.35 * target.baseScale, 0));
+                    const dx = aCenter.x - headOrigin.x;
+                    const dy = aCenter.y - headOrigin.y;
+                    const dz = aCenter.z - headOrigin.z;
+                    const targetYaw = Math.atan2(dx, dz);
+                    const flatD = Math.hypot(dx, dz);
+                    const targetPitch = -Math.atan2(dy, Math.max(0.1, flatD));
+
+                    let diff = targetYaw - t.headPivot.rotation.y;
+                    while (diff > Math.PI) diff -= Math.PI * 2;
+                    while (diff < -Math.PI) diff += Math.PI * 2;
+                    t.headPivot.rotation.y += diff * Math.min(1, dt * 12);
+                    t.headPivot.rotation.x += (targetPitch - t.headPivot.rotation.x) * Math.min(1, dt * 10);
+
+                    t.spinVel = t.isGatling ? 32 : 0;
+                    t.fireTimer -= dt;
+                    if (t.fireTimer <= 0 && Math.abs(diff) < 0.45) {
+                        t.fireTimer = t.fireInterval;
+                        muzzleWorld.set(0, 0, 1.05).applyMatrix4(t.headPivot.matrixWorld);
+                        combat._spawnTracer(muzzleWorld, aCenter, t.color, t.isGatling ? 0.045 : 0.075);
+                        if (!t.isGatling) {
+                            target.shockTimer = Math.max(target.shockTimer, 0.45);
+                        }
+                        combat.damageAlien(target, t.damage, aCenter, t.color, false, 1.75, gameCtx);
+                        if (headOrigin.distanceTo(gameCtx.playerPos) < 42) {
+                            this.sound.playTurretShot(t.isGatling);
+                        }
+                    }
+                } else {
+                    t.headPivot.rotation.y += dt * 0.7;
+                    t.headPivot.rotation.x *= Math.exp(-5 * dt);
+                    t.spinVel = Math.max(0, t.spinVel - dt * 24);
+                }
+
+                if (t.barrelCluster && t.spinVel > 0.1) {
+                    t.barrelCluster.rotation.z += t.spinVel * dt;
+                }
+            }
+
+            // Crafted Wall Holo-Shield Regeneration & Visual Pulse
+            for (const st of this.structures) {
+                if (st.attachments.has('shield_screen')) {
+                    const d = Math.hypot(st.x - gameCtx.playerPos.x, st.z - gameCtx.playerPos.z);
+                    if (d < 6.5 && Math.abs(st.y - gameCtx.playerPos.y) < 3.5) {
+                        gameCtx.restoreShieldSilent(9 * dt);
+                    }
+                }
+            }
+        }
+    }
+
+    XB.BuildingSystem = BuildingSystem;
+})(window);
