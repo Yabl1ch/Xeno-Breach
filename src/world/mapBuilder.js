@@ -14,8 +14,9 @@
     const XB = (global.XB = global.XB || {});
 
     class MapBuilder {
-        constructor(scene) {
+        constructor(scene, maxAniso = 4) {
             this.scene = scene;
+            this.maxAniso = maxAniso;
             this.ARENA_LIMIT_X = 92.0;
             this.ARENA_LIMIT_Z = 92.0;
 
@@ -46,24 +47,101 @@
         }
 
         build() {
-            const floorTex = XB.Textures.createFloorTexture();
-            floorTex.repeat.set(48, 48);
-            const wallTex = XB.Textures.createWallTexture();
-            const crateTex = XB.Textures.createCrateTexture('#4ade80');
-            const cargoTex = XB.Textures.createCrateTexture('#f59e0b');
-            const hazardTex = XB.Textures.createHazardTexture();
-            hazardTex.repeat.set(4, 1);
-            const grateTex = XB.Textures.createGratingTexture();
+            const aniso = this.maxAniso || 4;
+            const floorMaps = XB.Textures.createFloorMaps(aniso);
+            const wallMaps = XB.Textures.createWallMaps(aniso);
+            const structMaps = XB.Textures.createSteelPanelMaps('#13241d', '#193127', '#22c55e', 2, 2, aniso);
+            const bunkerMaps = XB.Textures.createSteelPanelMaps('#1a2c24', '#22382e', '#f59e0b', 2, 2, aniso);
+            const darkSteelMaps = XB.Textures.createSteelPanelMaps('#0b1511', '#12221c', '#38bdf8', 3, 2, aniso);
+            const crateMaps = XB.Textures.createCrateMaps('#4ade80', aniso);
+            const cargoMaps = XB.Textures.createCrateMaps('#f59e0b', aniso);
+            const hazardMaps = XB.Textures.createHazardMaps(aniso);
+            const grateMaps = XB.Textures.createGratingMaps(aniso);
 
-            const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.5, metalness: 0.42 });
-            const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.48, metalness: 0.55 });
-            const structMat = new THREE.MeshStandardMaterial({ color: 0x13241d, roughness: 0.44, metalness: 0.62 });
-            const bunkerMat = new THREE.MeshStandardMaterial({ color: 0x1a2c24, roughness: 0.52, metalness: 0.58 });
-            const darkSteelMat = new THREE.MeshStandardMaterial({ color: 0x0c1713, roughness: 0.34, metalness: 0.78 });
-            const crateMat = new THREE.MeshStandardMaterial({ map: crateTex, roughness: 0.44, metalness: 0.5 });
-            const cargoMat = new THREE.MeshStandardMaterial({ map: cargoTex, roughness: 0.46, metalness: 0.48 });
-            const bridgeMat = new THREE.MeshStandardMaterial({ map: grateTex, roughness: 0.4, metalness: 0.72 });
-            const rampMat = new THREE.MeshStandardMaterial({ map: hazardTex, roughness: 0.5, metalness: 0.55 });
+            const floorMat = new THREE.MeshStandardMaterial({
+                map: floorMaps.map,
+                bumpMap: floorMaps.bumpMap,
+                bumpScale: 0.08,
+                roughnessMap: floorMaps.roughnessMap,
+                roughness: 0.72,
+                metalness: 0.45,
+                emissiveMap: floorMaps.emissiveMap,
+                emissive: 0xffffff,
+                emissiveIntensity: 0.35
+            });
+            const wallMat = new THREE.MeshStandardMaterial({
+                map: wallMaps.map,
+                bumpMap: wallMaps.bumpMap,
+                bumpScale: 0.12,
+                roughnessMap: wallMaps.roughnessMap,
+                roughness: 0.68,
+                metalness: 0.56,
+                emissiveMap: wallMaps.emissiveMap,
+                emissive: 0xffffff,
+                emissiveIntensity: 0.45
+            });
+            const structMat = new THREE.MeshStandardMaterial({
+                map: structMaps.map,
+                bumpMap: structMaps.bumpMap,
+                bumpScale: 0.1,
+                roughnessMap: structMaps.roughnessMap,
+                roughness: 0.62,
+                metalness: 0.62
+            });
+            const bunkerMat = new THREE.MeshStandardMaterial({
+                map: bunkerMaps.map,
+                bumpMap: bunkerMaps.bumpMap,
+                bumpScale: 0.14,
+                roughnessMap: bunkerMaps.roughnessMap,
+                roughness: 0.72,
+                metalness: 0.52
+            });
+            const darkSteelMat = new THREE.MeshStandardMaterial({
+                map: darkSteelMaps.map,
+                bumpMap: darkSteelMaps.bumpMap,
+                bumpScale: 0.08,
+                roughnessMap: darkSteelMaps.roughnessMap,
+                roughness: 0.48,
+                metalness: 0.78
+            });
+            const crateMat = new THREE.MeshStandardMaterial({
+                map: crateMaps.map,
+                bumpMap: crateMaps.bumpMap,
+                bumpScale: 0.12,
+                roughnessMap: crateMaps.roughnessMap,
+                roughness: 0.58,
+                metalness: 0.54,
+                emissiveMap: crateMaps.emissiveMap,
+                emissive: 0xffffff,
+                emissiveIntensity: 0.7
+            });
+            const cargoMat = new THREE.MeshStandardMaterial({
+                map: cargoMaps.map,
+                bumpMap: cargoMaps.bumpMap,
+                bumpScale: 0.12,
+                roughnessMap: cargoMaps.roughnessMap,
+                roughness: 0.6,
+                metalness: 0.52,
+                emissiveMap: cargoMaps.emissiveMap,
+                emissive: 0xffffff,
+                emissiveIntensity: 0.7
+            });
+            const bridgeMat = new THREE.MeshStandardMaterial({
+                map: grateMaps.map,
+                bumpMap: grateMaps.bumpMap,
+                bumpScale: 0.11,
+                roughnessMap: grateMaps.roughnessMap,
+                roughness: 0.52,
+                metalness: 0.74
+            });
+            const rampMat = new THREE.MeshStandardMaterial({
+                map: hazardMaps.map,
+                bumpMap: hazardMaps.bumpMap,
+                bumpScale: 0.1,
+                roughnessMap: hazardMaps.roughnessMap,
+                roughness: 0.66,
+                metalness: 0.54
+            });
 
             // Main floor
             const floor = new THREE.Mesh(new THREE.PlaneGeometry(196, 212), floorMat);
@@ -859,59 +937,115 @@
         }
 
         _buildLightingAndSky() {
-            this.scene.add(new THREE.HemisphereLight(0x86efac, 0x091712, 0.98));
+            this.scene.add(new THREE.HemisphereLight(0x9be7c4, 0x0a1a14, 0.88));
 
-            const dirLight = new THREE.DirectionalLight(0xd1fae5, 1.08);
-            dirLight.position.set(48, 76, 36);
+            const dirLight = new THREE.DirectionalLight(0xdfffe8, 1.25);
+            dirLight.position.set(52, 84, 42);
             dirLight.castShadow = true;
-            dirLight.shadow.mapSize.width = 1024;
-            dirLight.shadow.mapSize.height = 1024;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            dirLight.shadow.bias = -0.0004;
+            dirLight.shadow.normalBias = 0.035;
             dirLight.shadow.camera.near = 10;
-            dirLight.shadow.camera.far = 230;
-            const d = 106;
+            dirLight.shadow.camera.far = 250;
+            const d = 108;
             dirLight.shadow.camera.left = -d;
             dirLight.shadow.camera.right = d;
             dirLight.shadow.camera.top = d;
             dirLight.shadow.camera.bottom = -d;
             this.scene.add(dirLight);
 
+            // Cool opposing rim/fill directional light to define 3D silhouettes on shadow sides
+            const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.44);
+            fillLight.position.set(-56, 38, -52);
+            this.scene.add(fillLight);
+
+            // Balanced elevated sector lights (high placement + controlled intensity prevent floor whiteouts)
             [
-                { color: 0x4ade80, x: 0, y: 10, z: 0, dist: 56, int: 2.0 },
-                { color: 0x22c55e, x: -64, y: 9, z: 0, dist: 58, int: 1.5 },
-                { color: 0xf59e0b, x: 64, y: 9, z: 0, dist: 58, int: 1.5 },
-                { color: 0xef4444, x: 0, y: 10, z: -84, dist: 72, int: 1.7 },
-                { color: 0x34d399, x: 0, y: 8, z: 72, dist: 48, int: 1.4 }
+                { color: 0x34d399, x: 0, y: 14, z: 0, dist: 64, int: 1.45 },
+                { color: 0x38bdf8, x: -64, y: 12, z: -6, dist: 62, int: 1.25 },
+                { color: 0xf59e0b, x: 64, y: 12, z: -6, dist: 62, int: 1.25 },
+                { color: 0xfb7185, x: -24, y: 12, z: -84, dist: 64, int: 1.2 },
+                { color: 0xfb7185, x: 24, y: 12, z: -84, dist: 64, int: 1.2 },
+                { color: 0x4ade80, x: 0, y: 11, z: 72, dist: 56, int: 1.2 },
+                { color: 0x6ee7b7, x: -42, y: 8.5, z: -38, dist: 38, int: 0.9 },
+                { color: 0xfbbf24, x: 42, y: 8.5, z: -38, dist: 38, int: 0.9 }
             ].forEach(l => {
-                const pt = new THREE.PointLight(l.color, l.int, l.dist);
+                const pt = new THREE.PointLight(l.color, l.int, l.dist, 1.4);
                 pt.position.set(l.x, l.y, l.z);
                 this.scene.add(pt);
             });
 
-            const starCount = 1200;
+            // Architectural illuminated sconces on perimeter walls & citadel corners
+            const sconceMat = new THREE.MeshStandardMaterial({ color: 0x0b1612, roughness: 0.4, metalness: 0.8 });
+            const emMint = new THREE.MeshBasicMaterial({ color: 0x6ee7b7 });
+            const emAmber = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
+            const emRose = new THREE.MeshBasicMaterial({ color: 0xfb7185 });
+            [
+                { x: -72, y: 9.2, z: -93.1, mat: emRose },
+                { x: 0, y: 9.2, z: -93.1, mat: emRose },
+                { x: 72, y: 9.2, z: -93.1, mat: emRose },
+                { x: -60, y: 9.2, z: 93.1, mat: emMint },
+                { x: 60, y: 9.2, z: 93.1, mat: emMint },
+                { x: -93.1, y: 9.2, z: -46, mat: emMint, rotY: Math.PI / 2 },
+                { x: -93.1, y: 9.2, z: 46, mat: emMint, rotY: Math.PI / 2 },
+                { x: 93.1, y: 9.2, z: -46, mat: emAmber, rotY: Math.PI / 2 },
+                { x: 93.1, y: 9.2, z: 46, mat: emAmber, rotY: Math.PI / 2 }
+            ].forEach(sc => {
+                const g = new THREE.Group();
+                g.position.set(sc.x, sc.y, sc.z);
+                if (sc.rotY) g.rotation.y = sc.rotY;
+                const housing = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.9, 0.5), sconceMat);
+                const bar = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.35, 0.56), sc.mat);
+                g.add(housing, bar);
+                this.scene.add(g);
+            });
+
+            // Textured Atmospheric Sky Dome (aurora horizon + megastructure skyline + nebula)
+            const skyTex = XB.Textures.createSkyDomeTexture();
+            const skyDome = new THREE.Mesh(
+                new THREE.SphereGeometry(320, 32, 24),
+                new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false })
+            );
+            this.scene.add(skyDome);
+
+            const starCount = 950;
             const starPos = new Float32Array(starCount * 3);
             for (let i = 0; i < starCount; i++) {
                 const theta = Math.random() * Math.PI * 2;
-                const phi = Math.random() * Math.PI * 0.45;
-                const r = 195 + Math.random() * 60;
+                const phi = Math.random() * Math.PI * 0.44;
+                const r = 215 + Math.random() * 55;
                 starPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-                starPos[i * 3 + 1] = r * Math.cos(phi) + 14;
+                starPos[i * 3 + 1] = r * Math.cos(phi) + 16;
                 starPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
             }
             const starGeo = new THREE.BufferGeometry();
             starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
-            this.scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xd1fae5, size: 1.0, fog: false })));
+            this.scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xd1fae5, size: 0.95, fog: false })));
 
-            const planet = new THREE.Mesh(new THREE.SphereGeometry(30, 28, 28), new THREE.MeshBasicMaterial({ color: 0x064e3b, fog: false }));
-            planet.position.set(-95, 76, -170);
+            const planetTex = XB.Textures.createPlanetTexture();
+            const planet = new THREE.Mesh(
+                new THREE.SphereGeometry(31, 32, 32),
+                new THREE.MeshBasicMaterial({ map: planetTex, fog: false })
+            );
+            planet.position.set(-96, 78, -172);
             this.scene.add(planet);
 
             const planetRing = new THREE.Mesh(
-                new THREE.RingGeometry(36, 52, 48),
-                new THREE.MeshBasicMaterial({ color: 0x4ade80, side: THREE.DoubleSide, transparent: true, opacity: 0.34, fog: false })
+                new THREE.RingGeometry(37, 54, 56),
+                new THREE.MeshBasicMaterial({ color: 0x6ee7b7, side: THREE.DoubleSide, transparent: true, opacity: 0.28, fog: false })
             );
             planetRing.position.copy(planet.position);
             planetRing.rotation.set(Math.PI / 2.35, 0.32, 0.18);
             this.scene.add(planetRing);
+
+            const planetOuterRing = new THREE.Mesh(
+                new THREE.RingGeometry(56, 62, 56),
+                new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide, transparent: true, opacity: 0.16, fog: false })
+            );
+            planetOuterRing.position.copy(planet.position);
+            planetOuterRing.rotation.copy(planetRing.rotation);
+            this.scene.add(planetOuterRing);
         }
 
         _buildNavGrid() {

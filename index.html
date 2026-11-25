@@ -250,7 +250,7 @@
         </div>
     </div>
 
-    <!-- 4-ВКЛАДОЧНЫЙ МАГАЗИН ПРОКАЧКИ -->
+    <!-- 5-ВКЛАДОЧНЫЙ ЭРГОНОМИЧНЫЙ МАГАЗИН ПРОКАЧКИ -->
     <div class="overlay-screen hidden" id="shop-screen">
         <div class="modal-card shop-modal">
             <div class="shop-header">
@@ -259,36 +259,78 @@
                     <h2 class="game-title" style="font-size:26px; margin:0;">МАГАЗИН ПРОКАЧКИ</h2>
                 </div>
                 <div class="shop-currencies">
-                    <div class="currency-pill" style="color:var(--crystal-cyan);">
+                    <div class="currency-pill" style="color:var(--crystal-cyan);" title="Кристаллы тратятся на Броню, Перчатку и Инженерию базы">
                         <svg class="svg-icon" viewBox="0 0 24 24"><polygon points="12 2 20 9 12 22 4 9 12 2"/></svg>
                         <span id="shop-crystals">0</span>
+                        <span class="currency-unit">КР</span>
                     </div>
-                    <div class="currency-pill" style="color:var(--coin-gold);">
+                    <div class="currency-pill" style="color:var(--coin-gold);" title="Монеты тратятся на Оружие, Обвесы, Постоянные ДОТы и Припасы">
                         <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 10h6M9 14h6"/></svg>
                         <span id="shop-coins">0</span>
+                        <span class="currency-unit">МОН</span>
                     </div>
-                    <button class="hud-btn" id="btn-shop-quickfill" title="Полный боекомплект, здоровье и щит за 50 монет">
+                    <div class="currency-pill" style="color:#6ee7b7;" title="Запас полимера для способностей перчатки, сферы Гелиос-П и турелей">
+                        <svg class="svg-icon" viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 12-12h-7l1-8z"/></svg>
+                        <span id="shop-polymer">100</span>
+                        <span class="currency-unit">ПОЛ</span>
+                    </div>
+                    <button class="hud-btn" id="btn-shop-quickfill" type="button" title="Полный боекомплект, здоровье и щит за 50 монет">
                         <svg class="svg-icon" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                         <span>Полный БК (50М)</span>
                     </button>
-                    <button class="hud-btn" id="btn-shop-close-top" title="Вернуться в бой (B / Esc)">
+                    <button class="hud-btn" id="btn-shop-close-top" type="button" title="Вернуться в бой (B / Esc)">
                         <svg class="svg-icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                         <span>В БОЙ</span>
                     </button>
                 </div>
             </div>
 
-            <div class="ds-segmented-track" style="flex-wrap:wrap;">
-                <button class="ds-segmented-item shop-tab-btn" data-tab="armor" data-active="true">Броня (Кристаллы)</button>
-                <button class="ds-segmented-item shop-tab-btn" data-tab="glove" data-active="false">Перчатка • 6 Ячеек</button>
-                <button class="ds-segmented-item shop-tab-btn" data-tab="weapons" data-active="false">Оружие • 6 Слотов</button>
-                <button class="ds-segmented-item shop-tab-btn" data-tab="attachments" data-active="false">Обвесы и Припасы</button>
-                <button class="ds-segmented-item shop-tab-btn" data-tab="craft" data-active="false">Крафт: Стены и Гатлинг</button>
+            <div class="shop-currency-legend">
+                <span class="legend-chip" style="--leg-c:var(--crystal-cyan);">
+                    <svg class="svg-icon" viewBox="0 0 24 24"><polygon points="12 2 20 9 12 22 4 9 12 2"/></svg>
+                    <b>Кристаллы:</b> Броня, Перчатка [Q–Y], Инженерия
+                </span>
+                <span class="legend-chip" style="--leg-c:var(--coin-gold);">
+                    <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 10h6M9 14h6"/></svg>
+                    <b>Монеты:</b> Оружие [1–6], Обвесы, Постоянные ДОТы и Ремонт
+                </span>
+                <span class="legend-chip" style="--leg-c:#6ee7b7;">
+                    <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>
+                    <b>Зелёная точка на вкладке</b> — есть доступное улучшение
+                </span>
             </div>
 
-            <div id="shop-content" class="shop-scroll-body"></div>
+            <div class="shop-tablist" role="tablist" focusgroup="tablist nomemory" aria-label="Разделы магазина">
+                <button type="button" role="tab" id="tab-btn-armor" class="shop-tab-btn" data-tab="armor" aria-selected="true" focusgroupstart>
+                    <svg class="svg-icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span class="tab-label">Броня и Костюм</span>
+                    <span class="tab-dot" id="tab-dot-armor" aria-hidden="true"></span>
+                </button>
+                <button type="button" role="tab" id="tab-btn-glove" class="shop-tab-btn" data-tab="glove" aria-selected="false">
+                    <svg class="svg-icon" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    <span class="tab-label">Перчатка • 6 Ячеек</span>
+                    <span class="tab-dot" id="tab-dot-glove" aria-hidden="true"></span>
+                </button>
+                <button type="button" role="tab" id="tab-btn-weapons" class="shop-tab-btn" data-tab="weapons" aria-selected="false">
+                    <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+                    <span class="tab-label">Оружие • 6 Слотов</span>
+                    <span class="tab-dot" id="tab-dot-weapons" aria-hidden="true"></span>
+                </button>
+                <button type="button" role="tab" id="tab-btn-attachments" class="shop-tab-btn" data-tab="attachments" aria-selected="false">
+                    <svg class="svg-icon" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                    <span class="tab-label">Обвесы и Припасы</span>
+                    <span class="tab-dot" id="tab-dot-attachments" aria-hidden="true"></span>
+                </button>
+                <button type="button" role="tab" id="tab-btn-craft" class="shop-tab-btn" data-tab="craft" aria-selected="false">
+                    <svg class="svg-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    <span class="tab-label">Крафт и База</span>
+                    <span class="tab-dot" id="tab-dot-craft" aria-hidden="true"></span>
+                </button>
+            </div>
 
-            <button class="ds-btn-primary" id="btn-shop-close">ВЕРНУТЬСЯ В БОЙ [B / ESC]</button>
+            <div id="shop-content" class="shop-scroll-body" role="tabpanel" aria-labelledby="tab-btn-armor" tabindex="0"></div>
+
+            <button class="ds-btn-primary" id="btn-shop-close" type="button">ВЕРНУТЬСЯ В БОЙ [B / ESC]</button>
         </div>
     </div>
 

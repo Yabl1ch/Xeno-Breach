@@ -37,6 +37,7 @@
         constructor(game) {
             this.game = game;
             this.activeShopTab = 'armor';
+            this.shopWeaponFilter = 'all';
             this.selectedModWeaponIdx = 0;
             this.selectedWeaponTargetSlot = 0;
             this.selectedGloveTargetSlot = 0;
@@ -120,6 +121,7 @@
 
             this.elShopCoins = document.getElementById('shop-coins');
             this.elShopCrystals = document.getElementById('shop-crystals');
+            this.elShopPolymer = document.getElementById('shop-polymer');
             this.elShopContent = document.getElementById('shop-content');
 
             this.gloveSlotEls = [];
@@ -240,13 +242,39 @@
         }
 
         _bindShopEvents() {
-            document.querySelectorAll('.shop-tab-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    this.activeShopTab = btn.dataset.tab;
-                    document.querySelectorAll('.shop-tab-btn').forEach(b => {
-                        b.dataset.active = (b === btn) ? 'true' : 'false';
-                    });
-                    this.renderShop();
+            const tabs = Array.from(document.querySelectorAll('.shop-tab-btn'));
+            const selectTab = (btn) => {
+                if (!btn) return;
+                this.activeShopTab = btn.dataset.tab;
+                tabs.forEach(b => {
+                    const isSel = b === btn;
+                    b.setAttribute('aria-selected', isSel ? 'true' : 'false');
+                    if (typeof b.toggleAttribute === 'function') {
+                        b.toggleAttribute('focusgroupstart', isSel);
+                    }
+                });
+                if (this.elShopContent && btn.id) {
+                    this.elShopContent.setAttribute('aria-labelledby', btn.id);
+                }
+                if (typeof btn.scrollIntoView === 'function') {
+                    btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                }
+                this.renderShop();
+            };
+
+            tabs.forEach((btn, idx) => {
+                btn.addEventListener('click', () => selectTab(btn));
+                btn.addEventListener('keydown', (e) => {
+                    let nextIdx = -1;
+                    if (e.key === 'ArrowRight') nextIdx = (idx + 1) % tabs.length;
+                    else if (e.key === 'ArrowLeft') nextIdx = (idx - 1 + tabs.length) % tabs.length;
+                    else if (e.key === 'Home') nextIdx = 0;
+                    else if (e.key === 'End') nextIdx = tabs.length - 1;
+                    if (nextIdx !== -1) {
+                        e.preventDefault();
+                        tabs[nextIdx].focus();
+                        selectTab(tabs[nextIdx]);
+                    }
                 });
             });
             document.getElementById('btn-shop-close').addEventListener('click', () => {
@@ -330,12 +358,83 @@
         // =====================================================================
         // 5-TAB ERGONOMIC ARMORY WORKSHOP
         // =====================================================================
+        _sectionHead(svgPath, title, sub) {
+            return `
+                <div class="shop-section-head">
+                    <span class="shop-section-title">
+                        <svg class="svg-icon" viewBox="0 0 24 24">${svgPath}</svg>
+                        <span>${title}</span>
+                    </span>
+                    <span class="shop-section-sub">${sub}</span>
+                </div>
+            `;
+        }
+
+        _computeTabAffordability() {
+            const g = this.game;
+            const c = g.combat;
+            const b = g.building;
+
+            const armorReady = XB.ARMORS.some((a, i) => !g.unlockedArmors.has(i) && g.crystals >= a.costCrystals)
+                || g.crystals >= (6 + g.armorPlateLvl * 5)
+                || g.crystals >= (6 + g.armorCapLvl * 5)
+                || g.crystals >= (8 + g.armorServoLvl * 6);
+
+            const gloveReady = XB.GLOVE_POWERS.some((p, i) => {
+                if (!c.unlockedPowers.has(i)) return g.crystals >= p.costCrystals;
+                const u = c.gloveUpgrades[i];
+                return (u.power < 6 && g.crystals >= (5 + u.power * 4))
+                    || (u.area < 6 && g.crystals >= (5 + u.area * 4))
+                    || (u.efficiency < 6 && g.crystals >= (5 + u.efficiency * 4));
+            }) || g.crystals >= (8 + Math.floor((c.maxPolymerEnergy - 100) / 25) * 7);
+
+            const weaponsReady = XB.WEAPONS.some((w, i) => {
+                if (!g.unlockedWeapons.has(i)) {
+                    return g.coins >= w.costCoins && g.crystals >= (w.costCrystals || 0);
+                }
+                const lvl = g.weaponLevels[i];
+                return lvl < 8 && g.coins >= (35 + lvl * 35);
+            });
+
+            let attReady = (g.coins >= 35 && g.medkitCount < g.maxMedkits) || (g.coins >= 40 && g.boostCharges < g.maxBoostCharges);
+            if (!attReady) {
+                for (const wi of g.unlockedWeapons) {
+                    const owned = g.ownedAttachments[wi];
+                    for (const slot of ['barrel', 'mag', 'optic', 'core']) {
+                        for (const att of XB.ATTACHMENTS[slot]) {
+                            if (!owned.has(`${slot}:${att.id}`) && g.coins >= att.costCoins) {
+                                attReady = true;
+                                break;
+                            }
+                        }
+                        if (attReady) break;
+                    }
+                    if (attReady) break;
+                }
+            }
+
+            const craftReady = XB.WALL_ATTACHMENTS.some(a => !b.unlockedWallAttachments.has(a.id) && g.coins >= a.unlockCoins)
+                || g.crystals >= (6 + b.wallHpLvl * 5)
+                || (b.maxTurrets < 8 && g.crystals >= (10 + (b.maxTurrets - 4) * 8));
+
+            return { armor: armorReady, glove: gloveReady, weapons: weaponsReady, attachments: attReady, craft: craftReady };
+        }
+
         renderShop() {
             const g = this.game;
             this.elShopCoins.textContent = g.coins;
             this.elShopCrystals.textContent = g.crystals;
+            if (this.elShopPolymer) {
+                this.elShopPolymer.textContent = `${Math.floor(g.combat.polymerEnergy)}/${g.combat.maxPolymerEnergy}`;
+            }
             const qf = document.getElementById('btn-shop-quickfill');
             if (qf) qf.disabled = g.coins < 50;
+
+            const dots = this._computeTabAffordability();
+            for (const key of ['armor', 'glove', 'weapons', 'attachments', 'craft']) {
+                const el = document.getElementById(`tab-dot-${key}`);
+                if (el) el.classList.toggle('has-ready', Boolean(dots[key]));
+            }
 
             if (this.activeShopTab === 'armor') this._renderArmorTab();
             else if (this.activeShopTab === 'glove') this._renderGloveTab();
@@ -346,33 +445,66 @@
 
         _renderArmorTab() {
             const g = this.game;
-            let html = '<div class="shop-grid">';
+            const cur = g.getEffectiveArmor();
+            const nextLockIdx = XB.ARMORS.findIndex((_, i) => !g.unlockedArmors.has(i));
+            const nextArmor = nextLockIdx !== -1 ? XB.ARMORS[nextLockIdx] : null;
+
+            let html = `
+                <div class="shop-guide-banner">
+                    <div>
+                        <strong>ТЕКУЩАЯ БРОНЯ: ${cur.name}</strong>
+                        <span> • ОЗ ${cur.maxHp} • Щит ${cur.maxShield} • Защита ${Math.round(cur.damageReduction * 100)}% • БХОП до ${cur.bhopMaxSpeed} м/с</span>
+                    </div>
+                    <span class="shop-status-pill ${nextArmor && g.crystals >= nextArmor.costCrystals ? 'price-ok' : ''}">
+                        ${nextArmor ? `Следующий класс: ${nextArmor.name} (${nextArmor.costCrystals} КР)` : 'ВСЕ КЛАССЫ ОТКРЫТЫ'}
+                    </span>
+                </div>
+            `;
+
+            html += this._sectionHead(
+                '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+                'КЛАССЫ ЭКЗОСКЕЛЕТОВ [8 МОДЕЛЕЙ]',
+                'Более тяжёлая броня усиливает защиту и щит, но снижает потолок БХОП'
+            );
+
+            html += '<div class="shop-grid">';
             XB.ARMORS.forEach((a, idx) => {
                 const unlocked = g.unlockedArmors.has(idx);
                 const equipped = g.armorIndex === idx;
-                const canAfford = g.crystals >= a.costCrystals;
+                const canAfford = !unlocked && g.crystals >= a.costCrystals;
+                const needMore = Math.max(0, a.costCrystals - g.crystals);
+                const effHp = a.maxHp + g.armorPlateLvl * 25;
+                const effShield = a.maxShield + g.armorCapLvl * 25;
+                const statusBadge = equipped
+                    ? '<span class="shop-status-pill ready">НАДЕТО</span>'
+                    : unlocked
+                        ? '<span class="shop-status-pill">КУПЛЕНО</span>'
+                        : `<span class="shop-status-pill ${canAfford ? 'price-ok' : ''}">${a.costCrystals} КР</span>`;
+
                 html += `
-                    <div class="shop-card ${equipped ? 'equipped' : ''}">
+                    <article class="shop-card ${equipped ? 'equipped' : (canAfford ? 'can-afford' : '')}">
+                        <header class="shop-card-top">
+                            <span class="shop-cat" style="color:${a.accentColor}">${a.category}</span>
+                            ${statusBadge}
+                        </header>
                         <div>
-                            <div class="shop-card-top">
-                                <span class="shop-cat" style="color:${a.accentColor}">${a.category}</span>
-                                <span class="font-mono" style="font-size:11px; color:var(--crystal-cyan)">${a.costCrystals} КР</span>
-                            </div>
-                            <h3 class="shop-card-title" style="margin:8px 0 6px;">${a.name}</h3>
+                            <h3 class="shop-card-title">${a.name}</h3>
                             <p class="shop-card-desc">${a.summary}</p>
                         </div>
                         <div class="shop-stats-mini font-mono">
-                            <span>ОЗ: ${a.maxHp + g.armorPlateLvl * 25}</span>
-                            <span>ЩИТ: ${a.maxShield + g.armorCapLvl * 25}</span>
+                            <span>ОЗ: ${effHp}</span>
+                            <span>ЩИТ: ${effShield}</span>
                             <span>БРОНЯ: ${Math.round(a.damageReduction * 100)}%</span>
                             <span>БХОП: ${a.bhopMaxSpeed} м/с</span>
                             <span>СКОР: ${Math.round(a.speedMult * 100)}%</span>
                             <span>СТРЕЙФ: ${Math.round(a.airAccelMult * 100)}%</span>
                         </div>
-                        <button class="shop-action-btn" data-armor-idx="${idx}" ${(!unlocked && !canAfford) || equipped ? 'disabled' : ''}>
-                            ${equipped ? 'ЭКИПИРОВАНО' : (unlocked ? 'НАДЕТЬ БРОНЮ' : `КУПИТЬ (${a.costCrystals} КР)`)}
-                        </button>
-                    </div>
+                        <footer class="shop-card-footer">
+                            <button type="button" class="shop-action-btn ${canAfford ? 'primary-buy' : (unlocked && !equipped ? 'equip-btn' : '')}" data-armor-idx="${idx}" ${(!unlocked && !canAfford) || equipped ? 'disabled' : ''}>
+                                ${equipped ? 'АКТИВНО СЕЙЧАС' : (unlocked ? 'НАДЕТЬ БРОНЮ' : (canAfford ? `КУПИТЬ (${a.costCrystals} КР)` : `НУЖНО ЕЩЁ +${needMore} КР`))}
+                            </button>
+                        </footer>
+                    </article>
                 `;
             });
             html += '</div>';
@@ -380,34 +512,41 @@
             const plateCost = 6 + g.armorPlateLvl * 5;
             const capCost = 6 + g.armorCapLvl * 5;
             const servoCost = 8 + g.armorServoLvl * 6;
-            html += `
-                <div class="shop-grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
-                    <div class="shop-card">
+
+            html += this._sectionHead(
+                '<rect x="4" y="4" width="16" height="16" rx="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/>',
+                'ПОСТОЯННЫЕ ЯДРА КОСТЮМА',
+                'Улучшения сохраняются и действуют на ЛЮБОЙ надетой броне'
+            );
+
+            const cores = [
+                { id: 'plate', tag: 'Прочность корпуса', lvl: g.armorPlateLvl, title: 'ТИТАНОВЫЕ ПЛАСТИНЫ', desc: '+25 к макс. Здоровью на любой надетой броне.', cost: plateCost },
+                { id: 'cap', tag: 'Ёмкость энергощита', lvl: g.armorCapLvl, title: 'КВАНТ-КОНДЕНСАТОР', desc: '+25 к макс. Энергощиту и +10% скорости регена.', cost: capCost },
+                { id: 'servo', tag: 'Динамика и БХОП', lvl: g.armorServoLvl, title: 'ГИРО-СЕРВОПРИВОДЫ', desc: '+4% к скорости бега, эйр-стрейфа и потолку БХОП.', cost: servoCost }
+            ];
+
+            html += '<div class="shop-grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">';
+            cores.forEach(c => {
+                const ok = g.crystals >= c.cost;
+                html += `
+                    <article class="shop-card ${ok ? 'can-afford' : ''}">
+                        <header class="shop-card-top">
+                            <span class="shop-cat">${c.tag}</span>
+                            <span class="shop-status-pill ${ok ? 'price-ok' : ''}">Ур. ${c.lvl}</span>
+                        </header>
                         <div>
-                            <span class="shop-cat">Модуль брони • Ур. ${g.armorPlateLvl}</span>
-                            <h3 class="shop-card-title" style="margin:6px 0;">ТИТАНОВЫЕ ПЛАСТИНЫ</h3>
-                            <p class="shop-card-desc">+25 к макс. Здоровью на любой надетой броне.</p>
+                            <h3 class="shop-card-title">${c.title}</h3>
+                            <p class="shop-card-desc">${c.desc}</p>
                         </div>
-                        <button class="shop-action-btn" data-core="plate" ${g.crystals < plateCost ? 'disabled' : ''}>УЛУЧШИТЬ (${plateCost} КР)</button>
-                    </div>
-                    <div class="shop-card">
-                        <div>
-                            <span class="shop-cat">Модуль щита • Ур. ${g.armorCapLvl}</span>
-                            <h3 class="shop-card-title" style="margin:6px 0;">КВАНТ-КОНДЕНСАТОР</h3>
-                            <p class="shop-card-desc">+25 к макс. Энергощиту и +10% скорости регена.</p>
-                        </div>
-                        <button class="shop-action-btn" data-core="cap" ${g.crystals < capCost ? 'disabled' : ''}>УЛУЧШИТЬ (${capCost} КР)</button>
-                    </div>
-                    <div class="shop-card">
-                        <div>
-                            <span class="shop-cat">Модуль приводов • Ур. ${g.armorServoLvl}</span>
-                            <h3 class="shop-card-title" style="margin:6px 0;">ГИРО-СЕРВОПРИВОДЫ</h3>
-                            <p class="shop-card-desc">+4% к скорости бега, эйр-стрейфа и потолку БХОП.</p>
-                        </div>
-                        <button class="shop-action-btn" data-core="servo" ${g.crystals < servoCost ? 'disabled' : ''}>УЛУЧШИТЬ (${servoCost} КР)</button>
-                    </div>
-                </div>
-            `;
+                        <footer class="shop-card-footer">
+                            <button type="button" class="shop-action-btn ${ok ? 'primary-buy' : ''}" data-core="${c.id}" ${!ok ? 'disabled' : ''}>
+                                ${ok ? `УЛУЧШИТЬ (+1) • ${c.cost} КР` : `НУЖНО ЕЩЁ +${c.cost - g.crystals} КР`}
+                            </button>
+                        </footer>
+                    </article>
+                `;
+            });
+            html += '</div>';
 
             this.elShopContent.innerHTML = html;
             this.elShopContent.querySelectorAll('[data-armor-idx]').forEach(btn => {
@@ -421,80 +560,117 @@
         _renderGloveTab() {
             const g = this.game;
             const c = g.combat;
+            const tgtMeta = XB.GLOVE_SLOT_META[this.selectedGloveTargetSlot];
 
-            let html = '<div class="loadout-strip">';
-            html += '<span class="shop-cat">ЦЕЛЕВАЯ ЯЧЕЙКА (6 ЯЧЕЕК ПЕРЧАТКИ):</span>';
+            let html = `
+                <div class="shop-guide-banner">
+                    <div>
+                        <strong>ЦЕЛЕВАЯ ЯЧЕЙКА ПЕРЧАТКИ [${tgtMeta.keyHint}]</strong>
+                        <span> — выберите ячейку ниже или жмите [Q E F T V Y] прямо на карточке способности</span>
+                    </div>
+                    <span class="shop-status-pill">Удерж. [Q] — радиальное кольцо</span>
+                </div>
+                <div class="loadout-strip">
+                    <span class="shop-cat">6 АКТИВНЫХ ЯЧЕЕК:</span>
+            `;
             c.equippedGloveSlots.forEach((pIdx, sIdx) => {
                 const p = XB.GLOVE_POWERS[pIdx];
                 const meta = XB.GLOVE_SLOT_META[sIdx];
                 const isTgt = sIdx === this.selectedGloveTargetSlot;
-                html += `<button class="shop-dock-btn ${isTgt ? 'target' : ''}" data-gdock="${sIdx}" style="border-color:${isTgt ? 'var(--coin-gold)' : p.color}; color:${p.color}">${meta.keyHint}: ${p.shortName}</button>`;
+                html += `<button type="button" class="shop-dock-btn ${isTgt ? 'target' : ''}" data-gdock="${sIdx}" style="border-color:${isTgt ? 'var(--coin-gold)' : p.color}; color:${p.color}">${meta.keyHint}: ${p.shortName}</button>`;
             });
-            html += '</div><div class="shop-grid">';
+            html += '</div>';
 
-            XB.GLOVE_POWERS.forEach((p, idx) => {
+            html += this._sectionHead(
+                '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+                'МОДУЛИ ПЕРЧАТКИ «ХРАНИТЕЛЬ» [9 СПОСОБНОСТЕЙ]',
+                'Прокачивайте Силу, Радиус/Длительность и Расход энергии до 6 уровня'
+            );
+
+            html += '<div class="shop-grid">';
+            const orderedIndices = [
+                ...XB.GLOVE_POWERS.map((_, i) => i).filter(i => c.unlockedPowers.has(i)),
+                ...XB.GLOVE_POWERS.map((_, i) => i).filter(i => !c.unlockedPowers.has(i))
+            ];
+
+            orderedIndices.forEach(idx => {
+                const p = XB.GLOVE_POWERS[idx];
                 const unlocked = c.unlockedPowers.has(idx);
                 const equippedSlot = c.equippedGloveSlots.indexOf(idx);
                 const upg = c.gloveUpgrades[idx];
+                const canUnlock = !unlocked && g.crystals >= p.costCrystals;
+                const needUnlock = Math.max(0, p.costCrystals - g.crystals);
 
                 const costPow = 5 + upg.power * 4;
                 const costArea = 5 + upg.area * 4;
                 const costEff = 5 + upg.efficiency * 4;
 
                 html += `
-                    <div class="shop-card ${equippedSlot !== -1 ? 'equipped' : ''}">
+                    <article class="shop-card ${equippedSlot !== -1 ? 'equipped' : (canUnlock ? 'can-afford' : '')}">
+                        <header class="shop-card-top">
+                            <span class="shop-cat" style="color:${p.color}">${equippedSlot !== -1 ? `ЯЧЕЙКА [${XB.GLOVE_SLOT_META[equippedSlot].wheelKeyHint}]` : (unlocked ? 'В ЗАПАСЕ' : 'ЗАКРЫТО')}</span>
+                            <span class="shop-status-pill ${equippedSlot !== -1 ? 'ready' : (canUnlock ? 'price-ok' : '')}">
+                                ${unlocked ? `${p.energyCost} ПОЛ` : `${p.costCrystals} КР`}
+                            </span>
+                        </header>
                         <div>
-                            <div class="shop-card-top">
-                                <span class="shop-cat" style="color:${p.color}">${equippedSlot !== -1 ? `ЯЧЕЙКА ${XB.GLOVE_SLOT_META[equippedSlot].keyHint}` : 'В ЗАПАСЕ'}</span>
-                                <span class="font-mono" style="font-size:11px; color:var(--crystal-cyan)">${unlocked ? 'ОТКРЫТО' : `${p.costCrystals} КР`}</span>
-                            </div>
-                            <h3 class="shop-card-title" style="margin:6px 0;">${p.name}</h3>
+                            <h3 class="shop-card-title">${p.name}</h3>
                             <p class="shop-card-desc">${p.desc}</p>
                         </div>
+                        <footer class="shop-card-footer">
                         ${!unlocked ? `
-                            <button class="shop-action-btn" data-unlock-power="${idx}" ${g.crystals < p.costCrystals ? 'disabled' : ''}>
-                                РАЗБЛОКИРОВАТЬ (${p.costCrystals} КР)
+                            <button type="button" class="shop-action-btn ${canUnlock ? 'primary-buy' : ''}" data-unlock-power="${idx}" ${!canUnlock ? 'disabled' : ''}>
+                                ${canUnlock ? `РАЗБЛОКИРОВАТЬ (${p.costCrystals} КР)` : `НУЖНО ЕЩЁ +${needUnlock} КР`}
                             </button>
                         ` : `
-                            <button class="shop-action-btn" data-assign-power="${idx}" data-slot="${this.selectedGloveTargetSlot}">
-                                ${equippedSlot === this.selectedGloveTargetSlot ? `ЭКИПИРОВАНО В [${XB.GLOVE_SLOT_META[this.selectedGloveTargetSlot].wheelKeyHint}]` : `ПОСТАВИТЬ В ЯЧЕЙКУ [${XB.GLOVE_SLOT_META[this.selectedGloveTargetSlot].wheelKeyHint}]`}
+                            <button type="button" class="shop-action-btn equip-btn" data-assign-power="${idx}" data-slot="${this.selectedGloveTargetSlot}">
+                                ${equippedSlot === this.selectedGloveTargetSlot ? `ЭКИПИРОВАНО В [${tgtMeta.wheelKeyHint}]` : `ПОСТАВИТЬ В ЯЧЕЙКУ [${tgtMeta.wheelKeyHint}]`}
                             </button>
                             <div class="slot-assign-row">
                                 ${XB.GLOVE_SLOT_META.map((m, sIdx) => `
-                                    <button class="slot-mini-btn ${equippedSlot === sIdx ? 'active' : ''}" data-assign-power="${idx}" data-slot="${sIdx}" title="Установить в ячейку ${m.keyHint}">
+                                    <button type="button" class="slot-mini-btn ${equippedSlot === sIdx ? 'active' : ''}" data-assign-power="${idx}" data-slot="${sIdx}" title="Установить в ячейку ${m.keyHint}">
                                         ${m.wheelKeyHint}
                                     </button>
                                 `).join('')}
                             </div>
                             <div class="sub-upg-list">
-                                <button class="sub-upg-btn" data-gupg="${idx}:power" ${upg.power >= 6 || g.crystals < costPow ? 'disabled' : ''}>
+                                <button type="button" class="sub-upg-btn" data-gupg="${idx}:power" ${upg.power >= 6 || g.crystals < costPow ? 'disabled' : ''}>
                                     <span>Сила Ур.${upg.power}/6</span>
                                     <span>${upg.power >= 6 ? 'МАКС' : `${costPow} КР`}</span>
                                 </button>
-                                <button class="sub-upg-btn" data-gupg="${idx}:area" ${upg.area >= 6 || g.crystals < costArea ? 'disabled' : ''}>
+                                <button type="button" class="sub-upg-btn" data-gupg="${idx}:area" ${upg.area >= 6 || g.crystals < costArea ? 'disabled' : ''}>
                                     <span>Радиус/Длит. Ур.${upg.area}/6</span>
                                     <span>${upg.area >= 6 ? 'МАКС' : `${costArea} КР`}</span>
                                 </button>
-                                <button class="sub-upg-btn" data-gupg="${idx}:efficiency" ${upg.efficiency >= 6 || g.crystals < costEff ? 'disabled' : ''}>
+                                <button type="button" class="sub-upg-btn" data-gupg="${idx}:efficiency" ${upg.efficiency >= 6 || g.crystals < costEff ? 'disabled' : ''}>
                                     <span>КД/Энергия Ур.${upg.efficiency}/6</span>
                                     <span>${upg.efficiency >= 6 ? 'МАКС' : `${costEff} КР`}</span>
                                 </button>
                             </div>
                         `}
-                    </div>
+                        </footer>
+                    </article>
                 `;
             });
 
             const polyCost = 8 + Math.floor((c.maxPolymerEnergy - 100) / 25) * 7;
+            const polyOk = g.crystals >= polyCost;
             html += `
-                <div class="shop-card">
-                    <div>
+                <article class="shop-card ${polyOk ? 'can-afford' : ''}">
+                    <header class="shop-card-top">
                         <span class="shop-cat">Реактор перчатки и Гелиоса</span>
-                        <h3 class="shop-card-title" style="margin:6px 0;">РЕЗЕРВУАР ПОЛИМЕРА</h3>
-                        <p class="shop-card-desc">+25 макс. Полимера (сейчас ${c.maxPolymerEnergy}). Усиливает перчатку, сферу «Гелиоса» и турели!</p>
+                        <span class="shop-status-pill ${polyOk ? 'price-ok' : ''}">${c.maxPolymerEnergy} ПОЛ</span>
+                    </header>
+                    <div>
+                        <h3 class="shop-card-title">РЕЗЕРВУАР ПОЛИМЕРА</h3>
+                        <p class="shop-card-desc">+25 макс. Полимера и быстрее авто-реген. Усиливает перчатку, сферу «Гелиоса» и турели.</p>
                     </div>
-                    <button class="shop-action-btn" id="btn-upgrade-poly" ${g.crystals < polyCost ? 'disabled' : ''}>РАСШИРИТЬ (${polyCost} КР)</button>
-                </div>
+                    <footer class="shop-card-footer">
+                        <button type="button" class="shop-action-btn ${polyOk ? 'primary-buy' : ''}" id="btn-upgrade-poly" ${!polyOk ? 'disabled' : ''}>
+                            ${polyOk ? `РАСШИРИТЬ (+25) • ${polyCost} КР` : `НУЖНО ЕЩЁ +${polyCost - g.crystals} КР`}
+                        </button>
+                    </footer>
+                </article>
             `;
             html += '</div>';
             this.elShopContent.innerHTML = html;
@@ -527,16 +703,50 @@
 
         _renderWeaponsTab() {
             const g = this.game;
+            const filter = this.shopWeaponFilter || 'all';
+            const tgtSlot = this.selectedWeaponTargetSlot + 1;
 
-            let html = '<div class="loadout-strip">';
-            html += '<span class="shop-cat">ВЫБЕРИТЕ СЛОТ (6 СЛОТОВ ОРУЖИЯ):</span>';
+            let html = `
+                <div class="shop-guide-banner">
+                    <div>
+                        <strong>ЦЕЛЕВОЙ СЛОТ ОРУЖИЯ [${tgtSlot}]</strong>
+                        <span> — выберите слот ниже или нажмите [1–6] прямо на карточке пушки</span>
+                    </div>
+                    <span class="shop-status-pill">${g.unlockedWeapons.size}/${XB.WEAPONS.length} ОТКРЫТО</span>
+                </div>
+                <div class="loadout-strip">
+                    <span class="shop-cat">6 АКТИВНЫХ СЛОТОВ:</span>
+            `;
             g.equippedWeaponSlots.forEach((wIdx, sIdx) => {
                 const isTgt = sIdx === this.selectedWeaponTargetSlot;
-                html += `<button class="shop-dock-btn ${isTgt ? 'target' : ''}" data-wdock="${sIdx}">[${sIdx + 1}] ${XB.WEAPONS[wIdx].shortName}</button>`;
+                html += `<button type="button" class="shop-dock-btn ${isTgt ? 'target' : ''}" data-wdock="${sIdx}">[${sIdx + 1}] ${XB.WEAPONS[wIdx].shortName}</button>`;
             });
-            html += '</div><div class="shop-grid">';
+            html += '</div>';
 
-            XB.WEAPONS.forEach((w, idx) => {
+            const ownedCount = g.unlockedWeapons.size;
+            const buyableCount = XB.WEAPONS.filter((w, i) => !g.unlockedWeapons.has(i) && g.coins >= w.costCoins && g.crystals >= (w.costCrystals || 0)).length;
+
+            html += `
+                <div class="shop-filter-row">
+                    <button type="button" class="shop-filter-btn ${filter === 'all' ? 'active' : ''}" data-wfilter="all">Все модели (${XB.WEAPONS.length})</button>
+                    <button type="button" class="shop-filter-btn ${filter === 'owned' ? 'active' : ''}" data-wfilter="owned">Купленные (${ownedCount})</button>
+                    <button type="button" class="shop-filter-btn ${filter === 'buyable' ? 'active' : ''}" data-wfilter="buyable">Хватает на покупку (${buyableCount})</button>
+                </div>
+                <div class="shop-grid">
+            `;
+
+            const list = XB.WEAPONS.map((w, idx) => ({ w, idx })).filter(({ w, idx }) => {
+                const unlocked = g.unlockedWeapons.has(idx);
+                if (filter === 'owned') return unlocked;
+                if (filter === 'buyable') return !unlocked && g.coins >= w.costCoins && g.crystals >= (w.costCrystals || 0);
+                return true;
+            });
+
+            if (list.length === 0) {
+                html += `<div class="shop-guide-banner" style="grid-column:1/-1;"><span>Нет оружия под выбранным фильтром. Переключите фильтр на «Все модели».</span></div>`;
+            }
+
+            list.forEach(({ w, idx }) => {
                 const unlocked = g.unlockedWeapons.has(idx);
                 const equippedSlot = g.equippedWeaponSlots.indexOf(idx);
                 const lvl = g.weaponLevels[idx];
@@ -544,48 +754,74 @@
                 const upgCost = 35 + lvl * 35;
                 const stats = g.combat.getWeaponStats(idx, lvl, g.equippedAttachments[idx]);
                 const needCrys = w.costCrystals || 0;
-                const canBuy = g.coins >= w.costCoins && g.crystals >= needCrys;
+                const canBuy = !unlocked && g.coins >= w.costCoins && g.crystals >= needCrys;
+                const canUpg = unlocked && !maxed && g.coins >= upgCost;
                 const priceTxt = needCrys > 0 ? `${w.costCoins}М + ${needCrys}КР` : `${w.costCoins} МОН`;
+                const needCoins = Math.max(0, w.costCoins - g.coins);
+                const needMoreCrys = Math.max(0, needCrys - g.crystals);
+                const missingStr = needCoins > 0 && needMoreCrys > 0
+                    ? `+${needCoins}М +${needMoreCrys}КР`
+                    : needCoins > 0 ? `+${needCoins} МОН` : `+${needMoreCrys} КР`;
+
+                const statusBadge = equippedSlot !== -1
+                    ? `<span class="shop-status-pill ready">СЛОТ ${equippedSlot + 1}</span>`
+                    : unlocked
+                        ? `<span class="shop-status-pill">В ЗАПАСЕ</span>`
+                        : `<span class="shop-status-pill ${canBuy ? 'coin-ok' : ''}">${priceTxt}</span>`;
 
                 html += `
-                    <div class="shop-card ${equippedSlot !== -1 ? 'equipped' : ''}">
+                    <article class="shop-card ${equippedSlot !== -1 ? 'equipped' : ((canBuy || canUpg) ? 'can-afford' : '')}">
+                        <header class="shop-card-top">
+                            <span class="shop-cat">${w.usesPolymer ? 'ПОЛИМЕР-ОРУЖИЕ' : 'АРСЕНАЛ'}</span>
+                            ${statusBadge}
+                        </header>
                         <div>
-                            <div class="shop-card-top">
-                                <span class="shop-cat">${equippedSlot !== -1 ? `СЛОТ ${equippedSlot + 1}` : 'АРСЕНАЛ'} • УР.${lvl}/8</span>
-                                <span class="font-mono" style="font-size:11px; color:var(--coin-gold)">${unlocked ? 'ДОСТУПНО' : priceTxt}</span>
-                            </div>
-                            <h3 class="shop-card-title" style="margin:6px 0;">${w.name}</h3>
+                            <h3 class="shop-card-title">${w.name}</h3>
                             <p class="shop-card-desc">${w.note}</p>
                         </div>
-                        <div class="shop-stats-mini font-mono">
-                            <span>УРОН: ${stats.damage}</span>
-                            <span>ОБОЙМА: ${w.usesPolymer ? 'БЕСКОН. ПОЛИМЕР' : stats.maxAmmo}</span>
+                        <div class="lvl-progress-wrap">
+                            <span>УР.${lvl}/8</span>
+                            <div class="lvl-track"><div class="lvl-fill" style="width:${(lvl / 8) * 100}%"></div></div>
                         </div>
+                        <div class="shop-stats-mini font-mono">
+                            <span>УРОН: ${stats.damage}${w.pellets > 1 ? ` x${w.pellets}` : ''}</span>
+                            <span>ОБОЙМА: ${w.usesPolymer ? 'ПОЛИМЕР' : stats.maxAmmo}</span>
+                            <span>ТЕМП: ${(1 / Math.max(0.04, stats.fireRate)).toFixed(1)}/с</span>
+                            <span>ПЕРЕЗАР.: ${stats.reloadTime.toFixed(2)}с</span>
+                        </div>
+                        <footer class="shop-card-footer">
                         ${!unlocked ? `
-                            <button class="shop-action-btn" data-buy-weapon="${idx}" ${!canBuy ? 'disabled' : ''}>
-                                ${w.craftable ? `СКРАФТИТЬ (${priceTxt})` : `КУПИТЬ (${priceTxt})`}
+                            <button type="button" class="shop-action-btn ${canBuy ? 'primary-buy' : ''}" data-buy-weapon="${idx}" ${!canBuy ? 'disabled' : ''}>
+                                ${canBuy ? (w.craftable ? `СКРАФТИТЬ (${priceTxt})` : `КУПИТЬ (${priceTxt})`) : `НУЖНО ЕЩЁ ${missingStr}`}
                             </button>
                         ` : `
-                            <button class="shop-action-btn" data-assign-weapon="${idx}" data-slot="${this.selectedWeaponTargetSlot}" style="background:rgba(56,189,248,0.16); border-color:var(--crystal-cyan);">
-                                ${equippedSlot === this.selectedWeaponTargetSlot ? `ЭКИПИРОВАНО В СЛОТ [${this.selectedWeaponTargetSlot + 1}]` : `В СЛОТ [${this.selectedWeaponTargetSlot + 1}]`}
+                            <button type="button" class="shop-action-btn equip-btn" data-assign-weapon="${idx}" data-slot="${this.selectedWeaponTargetSlot}">
+                                ${equippedSlot === this.selectedWeaponTargetSlot ? `АКТИВНО В СЛОТЕ [${tgtSlot}]` : `ПОСТАВИТЬ В СЛОТ [${tgtSlot}]`}
                             </button>
                             <div class="slot-assign-row">
                                 ${[0, 1, 2, 3, 4, 5].map(sIdx => `
-                                    <button class="slot-mini-btn ${equippedSlot === sIdx ? 'active' : ''}" data-assign-weapon="${idx}" data-slot="${sIdx}">
+                                    <button type="button" class="slot-mini-btn ${equippedSlot === sIdx ? 'active' : ''}" data-assign-weapon="${idx}" data-slot="${sIdx}">
                                         ${sIdx + 1}
                                     </button>
                                 `).join('')}
                             </div>
-                            <button class="shop-action-btn" data-weapon-upg="${idx}" ${maxed || g.coins < upgCost ? 'disabled' : ''}>
-                                ${maxed ? 'МАКС. УРОВЕНЬ' : `ПРОКАЧАТЬ УРОН+ОБОЙМУ (${upgCost} МОН)`}
+                            <button type="button" class="shop-action-btn ${canUpg ? 'primary-buy' : ''}" data-weapon-upg="${idx}" ${maxed || !canUpg ? 'disabled' : ''}>
+                                ${maxed ? 'МАКСИМАЛЬНЫЙ УРОВЕНЬ' : (canUpg ? `ПРОКАЧАТЬ +УРОН И ОБОЙМУ (${upgCost} МОН)` : `УР.+1: НУЖНО ЕЩЁ +${upgCost - g.coins} МОН`)}
                             </button>
                         `}
-                    </div>
+                        </footer>
+                    </article>
                 `;
             });
             html += '</div>';
             this.elShopContent.innerHTML = html;
 
+            this.elShopContent.querySelectorAll('[data-wfilter]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    this.shopWeaponFilter = btn.dataset.wfilter;
+                    this.renderShop();
+                });
+            });
             this.elShopContent.querySelectorAll('[data-wdock]').forEach(btn => {
                 btn.addEventListener('click', () => {
                     this.selectedWeaponTargetSlot = Number(btn.dataset.wdock);
@@ -616,76 +852,133 @@
             const ownedSet = g.ownedAttachments[wIdx];
             const eqMap = g.equippedAttachments[wIdx];
 
-            // Weapon selector pills
-            let html = '<div class="loadout-strip" style="flex-wrap:wrap;">';
+            let html = this._sectionHead(
+                '<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>',
+                'ПОЛЕВЫЕ ПРИПАСЫ И ПОПОЛНЕНИЕ БК',
+                'Мгновенная покупка за монеты перед следующей волной'
+            );
+
+            html += `
+                <div class="shop-grid" style="grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));">
+                    <article class="shop-card ${g.coins >= 35 && g.medkitCount < g.maxMedkits ? 'can-afford' : ''}">
+                        <header class="shop-card-top">
+                            <span class="shop-cat">Лечение [X]</span>
+                            <span class="shop-status-pill">${g.medkitCount}/${g.maxMedkits}</span>
+                        </header>
+                        <div>
+                            <h3 class="shop-card-title">ПОЛЕВАЯ АПТЕЧКА</h3>
+                            <p class="shop-card-desc">Восстанавливает Здоровье и Щит прямо посреди боя.</p>
+                        </div>
+                        <footer class="shop-card-footer">
+                            <button type="button" class="shop-action-btn ${g.coins >= 35 && g.medkitCount < g.maxMedkits ? 'primary-buy' : ''}" data-supply="medkit" ${g.coins < 35 || g.medkitCount >= g.maxMedkits ? 'disabled' : ''}>
+                                ${g.medkitCount >= g.maxMedkits ? 'ПОЛНЫЙ ЗАПАС' : `КУПИТЬ (35 МОН)`}
+                            </button>
+                        </footer>
+                    </article>
+                    <article class="shop-card ${g.coins >= 40 && g.boostCharges < g.maxBoostCharges ? 'can-afford' : ''}">
+                        <header class="shop-card-top">
+                            <span class="shop-cat">Мобильность [Z]</span>
+                            <span class="shop-status-pill">${g.boostCharges}/${g.maxBoostCharges}</span>
+                        </header>
+                        <div>
+                            <h3 class="shop-card-title">БУСТЕР СКОРОСТИ</h3>
+                            <p class="shop-card-desc">Овердрайв +48% к скорости и БХОП на короткое время.</p>
+                        </div>
+                        <footer class="shop-card-footer">
+                            <button type="button" class="shop-action-btn ${g.coins >= 40 && g.boostCharges < g.maxBoostCharges ? 'primary-buy' : ''}" data-supply="boost" ${g.coins < 40 || g.boostCharges >= g.maxBoostCharges ? 'disabled' : ''}>
+                                ${g.boostCharges >= g.maxBoostCharges ? 'ПОЛНЫЙ ЗАПАС' : `КУПИТЬ (40 МОН)`}
+                            </button>
+                        </footer>
+                    </article>
+                    <article class="shop-card ${g.coins >= 50 ? 'can-afford' : ''}">
+                        <header class="shop-card-top">
+                            <span class="shop-cat">Комплект</span>
+                            <span class="shop-status-pill coin-ok">50 МОН</span>
+                        </header>
+                        <div>
+                            <h3 class="shop-card-title">ПОЛНЫЙ БОЕКОМПЛЕКТ</h3>
+                            <p class="shop-card-desc">Перезаряжает ВСЕ 12 пушек и чинит броню/щит до 100%.</p>
+                        </div>
+                        <footer class="shop-card-footer">
+                            <button type="button" class="shop-action-btn ${g.coins >= 50 ? 'primary-buy' : ''}" data-supply="full" ${g.coins < 50 ? 'disabled' : ''}>
+                                ВОССТАНОВИТЬ ВСЁ (50 МОН)
+                            </button>
+                        </footer>
+                    </article>
+                </div>
+            `;
+
+            html += this._sectionHead(
+                '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+                'ТЮНИНГ ОРУЖИЯ (ОБВЕСЫ)',
+                'Выберите пушку ниже и установите до 4 модификаций: Ствол, Магазин, Оптику и Ядро'
+            );
+
+            html += '<div class="loadout-strip">';
             XB.WEAPONS.forEach((wp, idx) => {
-                if (!g.unlockedWeapons.has(idx)) return;
-                html += `<button class="slot-mini-btn ${idx === wIdx ? 'active' : ''}" style="padding:5px 11px;" data-mod-weapon="${idx}">${wp.shortName}</button>`;
+                const isUnlocked = g.unlockedWeapons.has(idx);
+                if (!isUnlocked) {
+                    html += `<button type="button" class="shop-dock-btn" disabled style="opacity:0.35; cursor:not-allowed;" title="Сначала купите оружие во вкладке Оружие">${wp.shortName}</button>`;
+                } else {
+                    html += `<button type="button" class="shop-dock-btn ${idx === wIdx ? 'target' : ''}" data-mod-weapon="${idx}">${wp.shortName}</button>`;
+                }
             });
             html += '</div>';
 
             const stats = g.combat.getWeaponStats(wIdx, g.weaponLevels[wIdx], eqMap);
             html += `
-                <div class="loadout-strip" style="margin-bottom:14px;">
-                    <span class="shop-cat">${w.name}</span>
-                    <span class="font-mono" style="font-size:12px;">Урон: ${stats.damage} • Обойма: ${w.usesPolymer ? 'ПОЛИМЕР' : stats.maxAmmo} • Разброс: ${(stats.spread * 100).toFixed(1)}% • Перезарядка: ${stats.reloadTime.toFixed(2)}с</span>
+                <div class="shop-guide-banner">
+                    <div>
+                        <strong>${w.name} (Ур. ${g.weaponLevels[wIdx]}/8)</strong>
+                        <span class="font-mono"> • Урон ${stats.damage} • Обойма ${w.usesPolymer ? 'ПОЛИМЕР' : stats.maxAmmo} • Разброс ${(stats.spread * 100).toFixed(1)}% • Перезарядка ${stats.reloadTime.toFixed(2)}с</span>
+                    </div>
                 </div>
-                <div class="shop-grid">
             `;
 
-            const slotTitles = { barrel: 'Ствол', mag: 'Магазин', optic: 'Оптика', core: 'Ядро / Боеприпас' };
-            for (const slot of ['barrel', 'mag', 'optic', 'core']) {
-                for (const att of XB.ATTACHMENTS[slot]) {
-                    const key = `${slot}:${att.id}`;
+            const slotMeta = [
+                { key: 'barrel', title: 'СТВОЛ', desc: 'Усиливает урон, точность и дульную баллистику' },
+                { key: 'mag', title: 'МАГАЗИН / ПИТАНИЕ', desc: 'Расширяет боезапас и ускоряет перезарядку' },
+                { key: 'optic', title: 'ОПТИКА И ПРИЦЕЛ', desc: 'Снижает разброс при стрейфах и БХОПе' },
+                { key: 'core', title: 'ЯДРО / БОЕПРИПАС', desc: 'Добавляет пробитие, криты или энергоэффект' }
+            ];
+
+            for (const s of slotMeta) {
+                html += `
+                    <div class="shop-section-head" style="margin-top:10px;">
+                        <span class="shop-section-title">${s.title}</span>
+                        <span class="shop-section-sub">${s.desc}</span>
+                    </div>
+                    <div class="shop-grid">
+                `;
+                for (const att of XB.ATTACHMENTS[s.key]) {
+                    const key = `${s.key}:${att.id}`;
                     const owned = ownedSet.has(key);
-                    const equipped = eqMap[slot] === att.id;
+                    const equipped = eqMap[s.key] === att.id;
+                    const canBuy = !owned && g.coins >= att.costCoins;
+                    const needMore = Math.max(0, att.costCoins - g.coins);
                     html += `
-                        <div class="shop-card ${equipped ? 'equipped' : ''}">
+                        <article class="shop-card ${equipped ? 'equipped' : (canBuy ? 'can-afford' : '')}">
+                            <header class="shop-card-top">
+                                <span class="shop-cat">${s.title}</span>
+                                <span class="shop-status-pill ${equipped ? 'ready' : (canBuy ? 'coin-ok' : '')}">
+                                    ${equipped ? 'УСТАНОВЛЕНО' : (owned ? 'КУПЛЕНО' : `${att.costCoins} МОН`)}
+                                </span>
+                            </header>
                             <div>
-                                <div class="shop-card-top">
-                                    <span class="shop-cat">${slotTitles[slot]}</span>
-                                    <span class="font-mono" style="font-size:11px; color:var(--coin-gold)">${owned ? 'КУПЛЕНО' : `${att.costCoins} МОН`}</span>
-                                </div>
-                                <h3 class="shop-card-title" style="margin:6px 0;">${att.name}</h3>
+                                <h3 class="shop-card-title">${att.name}</h3>
                                 <p class="shop-card-desc">${att.desc}</p>
                             </div>
-                            <button class="shop-action-btn" data-att-buy="${wIdx}:${slot}:${att.id}" ${!owned && g.coins < att.costCoins ? 'disabled' : ''}>
-                                ${equipped ? 'СНЯТЬ ОБВЕС' : (owned ? 'УСТАНОВИТЬ' : `КУПИТЬ (${att.costCoins} МОН)`)}
-                            </button>
-                        </div>
+                            <footer class="shop-card-footer">
+                                <button type="button" class="shop-action-btn ${canBuy ? 'primary-buy' : (owned && !equipped ? 'equip-btn' : '')}" data-att-buy="${wIdx}:${s.key}:${att.id}" ${!owned && !canBuy ? 'disabled' : ''}>
+                                    ${equipped ? 'СНЯТЬ ОБВЕС' : (owned ? 'УСТАНОВИТЬ НА ОРУЖИЕ' : (canBuy ? `КУПИТЬ И НАДЕТЬ (${att.costCoins} МОН)` : `НУЖНО ЕЩЁ +${needMore} МОН`))}
+                                </button>
+                            </footer>
+                        </article>
                     `;
                 }
+                html += '</div>';
             }
 
-            // Field Supplies
-            html += `
-                <div class="shop-card">
-                    <div>
-                        <span class="shop-cat">Припас</span>
-                        <h3 class="shop-card-title" style="margin:6px 0;">ПОЛЕВАЯ АПТЕЧКА [X]</h3>
-                        <p class="shop-card-desc">Восстанавливает ОЗ и Щит. В наличии: ${g.medkitCount}/${g.maxMedkits}</p>
-                    </div>
-                    <button class="shop-action-btn" data-supply="medkit" ${g.coins < 35 || g.medkitCount >= g.maxMedkits ? 'disabled' : ''}>КУПИТЬ (35 МОН)</button>
-                </div>
-                <div class="shop-card">
-                    <div>
-                        <span class="shop-cat">Припас</span>
-                        <h3 class="shop-card-title" style="margin:6px 0;">БУСТЕР СКОРОСТИ [Z]</h3>
-                        <p class="shop-card-desc">Овердрайв +48% скорости. В наличии: ${g.boostCharges}/${g.maxBoostCharges}</p>
-                    </div>
-                    <button class="shop-action-btn" data-supply="boost" ${g.coins < 40 || g.boostCharges >= g.maxBoostCharges ? 'disabled' : ''}>КУПИТЬ (40 МОН)</button>
-                </div>
-                <div class="shop-card">
-                    <div>
-                        <span class="shop-cat">Сервис</span>
-                        <h3 class="shop-card-title" style="margin:6px 0;">ПОЛНЫЙ БОЕКОМПЛЕКТ</h3>
-                        <p class="shop-card-desc">Заряжает все пушки и полностью чинит броню/щит.</p>
-                    </div>
-                    <button class="shop-action-btn" data-supply="full" ${g.coins < 50 ? 'disabled' : ''}>ВОССТАНОВИТЬ (50 МОН)</button>
-                </div>
-            `;
-
-            html += '</div>';
             this.elShopContent.innerHTML = html;
 
             this.elShopContent.querySelectorAll('[data-mod-weapon]').forEach(btn => {
@@ -717,89 +1010,139 @@
             const turretCost = 10 + (b.maxTurrets - 4) * 8;
 
             let html = `
-                <div class="loadout-strip" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
-                    <span class="shop-cat">ПОСТОЯННАЯ СТРОЙКА ЗА МОНЕТЫ [C] (АВТОРЕМОНТ ПОСЛЕ ВОЛНЫ) • ПОСТРОЕК: ${b.structures.length} • ТУРЕЛЕЙ: ${b.turrets.length}</span>
+                <div class="shop-guide-banner">
+                    <div>
+                        <strong>ИНЖЕНЕРНЫЙ ТЕРМИНАЛ БАЗЫ [C]</strong>
+                        <span> • Построек на карте: ${b.structures.length} • Активных турелей: ${b.turrets.length}/${b.maxTurrets}</span>
+                    </div>
+                    <span class="shop-status-pill ready">ПОСТОЯННАЯ СТРОЙКА: АВТОРЕМОНТ МЕЖДУ ВОЛНАМИ</span>
                 </div>
-                <div class="shop-grid">
             `;
 
+            html += this._sectionHead(
+                '<polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>',
+                'УКРЕПЛЕНИЕ БАЗЫ И КРАФТ ГАТЛИНГА',
+                'Фундаментальные улучшения фортификаций (Кристаллы) и тяжёлый пулемёт'
+            );
+
+            html += '<div class="shop-grid" style="grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));">';
+            html += `
+                <article class="shop-card ${g.crystals >= wallCost ? 'can-afford' : ''}">
+                    <header class="shop-card-top">
+                        <span class="shop-cat">Прочность фортов</span>
+                        <span class="shop-status-pill ${g.crystals >= wallCost ? 'price-ok' : ''}">Ур. ${b.wallHpLvl}</span>
+                    </header>
+                    <div>
+                        <h3 class="shop-card-title">УКРЕПЛЕНИЕ ФОРТ-СТЕН</h3>
+                        <p class="shop-card-desc">+22% к прочности всех стен, ДОТов и рамп при строительстве.</p>
+                    </div>
+                    <footer class="shop-card-footer">
+                        <button type="button" class="shop-action-btn ${g.crystals >= wallCost ? 'primary-buy' : ''}" data-bing="wall" ${g.crystals < wallCost ? 'disabled' : ''}>
+                            ${g.crystals >= wallCost ? `УСИЛИТЬ (${wallCost} КР)` : `НУЖНО ЕЩЁ +${wallCost - g.crystals} КР`}
+                        </button>
+                    </footer>
+                </article>
+                <article class="shop-card ${b.maxTurrets < 8 && g.crystals >= turretCost ? 'can-afford' : ''}">
+                    <header class="shop-card-top">
+                        <span class="shop-cat">Авто-оборона</span>
+                        <span class="shop-status-pill ${b.maxTurrets < 8 && g.crystals >= turretCost ? 'price-ok' : ''}">Макс. ${b.maxTurrets}/8</span>
+                    </header>
+                    <div>
+                        <h3 class="shop-card-title">КОНТРОЛЛЕР ТУРЕЛЕЙ</h3>
+                        <p class="shop-card-desc">+1 к лимиту одновременно активных Полимерных и Гатлинг-турелей.</p>
+                    </div>
+                    <footer class="shop-card-footer">
+                        <button type="button" class="shop-action-btn ${b.maxTurrets < 8 && g.crystals >= turretCost ? 'primary-buy' : ''}" data-bing="turret" ${b.maxTurrets >= 8 || g.crystals < turretCost ? 'disabled' : ''}>
+                            ${b.maxTurrets >= 8 ? 'ДОСТИГНУТ МАКСИМУМ' : (g.crystals >= turretCost ? `РАСШИРИТЬ +1 (${turretCost} КР)` : `НУЖНО ЕЩЁ +${turretCost - g.crystals} КР`)}
+                        </button>
+                    </footer>
+                </article>
+            `;
+            if (vulcan) {
+                const canCraft = !vulcanUnlocked && g.coins >= vulcan.costCoins && g.crystals >= (vulcan.costCrystals || 0);
+                html += `
+                    <article class="shop-card ${vulcanUnlocked ? 'equipped' : (canCraft ? 'can-afford' : '')}">
+                        <header class="shop-card-top">
+                            <span class="shop-cat" style="color:#f97316">Крафт Оружия</span>
+                            <span class="shop-status-pill ${vulcanUnlocked ? 'ready' : (canCraft ? 'coin-ok' : '')}">${vulcanUnlocked ? 'В АРСЕНАЛЕ' : `${vulcan.costCoins}М + ${vulcan.costCrystals}КР`}</span>
+                        </header>
+                        <div>
+                            <h3 class="shop-card-title">${vulcan.name}</h3>
+                            <p class="shop-card-desc">${vulcan.note}</p>
+                        </div>
+                        <footer class="shop-card-footer">
+                            <button type="button" class="shop-action-btn ${canCraft ? 'primary-buy' : ''}" data-craft-vulcan="1" ${vulcanUnlocked || !canCraft ? 'disabled' : ''}>
+                                ${vulcanUnlocked ? 'УЖЕ СКРАФЧЕНО (В ОРУЖИИ)' : `СООРУДИТЬ ГАТЛИНГ (${vulcan.costCoins}М + ${vulcan.costCrystals}КР)`}
+                            </button>
+                        </footer>
+                    </article>
+                `;
+            }
+            html += '</div>';
+
+            html += this._sectionHead(
+                '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>',
+                'ЧЕРТЕЖИ СТРОЙКИ [КЛАВИША C В БОЮ]',
+                'Постоянные конструкции за Монеты чинятся сами в конце каждой волны'
+            );
+
+            html += '<div class="shop-grid">';
             XB.BUILD_BLUEPRINTS.forEach((bp, bpIdx) => {
                 const isSel = b.selectedBlueprintIdx === bpIdx;
                 const costLabel = bp.costCoins > 0 ? `${bp.costCoins} МОН` : `${bp.costPoly} ПОЛИМ`;
                 html += `
-                    <div class="shop-card ${isSel ? 'equipped' : ''}">
+                    <article class="shop-card ${isSel ? 'equipped' : ''}">
+                        <header class="shop-card-top">
+                            <span class="shop-cat">${bp.permanent ? 'Постоянно (∞)' : 'Быстро (38с)'} • [${bpIdx + 1}]</span>
+                            <span class="shop-status-pill ${isSel ? 'ready' : ''}">${costLabel}</span>
+                        </header>
                         <div>
-                            <div class="shop-card-top">
-                                <span class="shop-cat">${bp.permanent ? 'Постоянно (∞)' : 'Полимер (38с)'} • [${bpIdx + 1}]</span>
-                                <span class="font-mono" style="font-size:11px; color:var(--coin-gold)">${costLabel}</span>
-                            </div>
-                            <h3 class="shop-card-title" style="margin:6px 0;">${bp.name}</h3>
+                            <h3 class="shop-card-title">${bp.name}</h3>
                             <p class="shop-card-desc">${bp.desc}</p>
                         </div>
-                        <button class="shop-action-btn" data-select-bp="${bpIdx}">
-                            ${isSel ? 'ВЫБРАНО ДЛЯ [C]' : `ВЫБРАТЬ ЧЕРТЁЖ [${bpIdx + 1}]`}
-                        </button>
-                    </div>
+                        <div class="shop-stats-mini font-mono">
+                            <span>ПРОЧНОСТЬ: ${Math.round((bp.hp || 400) * (1 + b.wallHpLvl * 0.22))}</span>
+                            <span>${bp.permanent ? 'АВТОРЕМОНТ: ДА' : 'ТИП: БАРЬЕР'}</span>
+                        </div>
+                        <footer class="shop-card-footer">
+                            <button type="button" class="shop-action-btn ${isSel ? '' : 'equip-btn'}" data-select-bp="${bpIdx}">
+                                ${isSel ? 'АКТИВНО ДЛЯ [C]' : `ВЫБРАТЬ ЧЕРТЁЖ [${bpIdx + 1}]`}
+                            </button>
+                        </footer>
+                    </article>
                 `;
             });
+            html += '</div>';
 
+            html += this._sectionHead(
+                '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+                'МОДУЛИ НА СТЕНЫ [КЛАВИША U / ПКМ НАД СТЕНОЙ]',
+                'Усиливайте уже построенные стены тесла-катушками, бронещитами и регенераторами'
+            );
+
+            html += '<div class="shop-grid">';
             XB.WALL_ATTACHMENTS.forEach(att => {
                 const unlocked = b.unlockedWallAttachments.has(att.id);
                 const selected = b.selectedAttachmentId === att.id;
+                const canUnlock = !unlocked && g.coins >= att.unlockCoins;
                 html += `
-                    <div class="shop-card ${selected ? 'equipped' : ''}">
+                    <article class="shop-card ${selected ? 'equipped' : (canUnlock ? 'can-afford' : '')}">
+                        <header class="shop-card-top">
+                            <span class="shop-cat" style="color:${att.color}">Модуль стены [U]</span>
+                            <span class="shop-status-pill ${selected ? 'ready' : (canUnlock ? 'coin-ok' : '')}">${unlocked ? `${att.applyCoins}М / уст.` : `${att.unlockCoins} МОН`}</span>
+                        </header>
                         <div>
-                            <div class="shop-card-top">
-                                <span class="shop-cat" style="color:${att.color}">Обвес стены [U]</span>
-                                <span class="font-mono" style="font-size:11px; color:var(--coin-gold)">${unlocked ? `${att.applyCoins}М за стену` : `${att.unlockCoins} МОН`}</span>
-                            </div>
-                            <h3 class="shop-card-title" style="margin:6px 0;">${att.name}</h3>
+                            <h3 class="shop-card-title">${att.name}</h3>
                             <p class="shop-card-desc">${att.desc}</p>
                         </div>
-                        <button class="shop-action-btn" data-watt="${att.id}" ${!unlocked && g.coins < att.unlockCoins ? 'disabled' : ''}>
-                            ${unlocked ? (selected ? 'ВЫБРАНО ДЛЯ [U]' : 'ВЫБРАТЬ ДЛЯ [U]') : `ОТКРЫТЬ ЧЕРТЁЖ (${att.unlockCoins} МОН)`}
-                        </button>
-                    </div>
+                        <footer class="shop-card-footer">
+                            <button type="button" class="shop-action-btn ${canUnlock ? 'primary-buy' : (unlocked && !selected ? 'equip-btn' : '')}" data-watt="${att.id}" ${!unlocked && !canUnlock ? 'disabled' : ''}>
+                                ${unlocked ? (selected ? 'ВЫБРАНО ДЛЯ [U]' : 'ВЫБРАТЬ ДЛЯ [U]') : (canUnlock ? `ОТКРЫТЬ ЧЕРТЁЖ (${att.unlockCoins} МОН)` : `НУЖНО ЕЩЁ +${att.unlockCoins - g.coins} МОН`)}
+                            </button>
+                        </footer>
+                    </article>
                 `;
             });
-
-            if (vulcan) {
-                const canCraft = g.coins >= vulcan.costCoins && g.crystals >= (vulcan.costCrystals || 0);
-                html += `
-                    <div class="shop-card ${vulcanUnlocked ? 'equipped' : ''}">
-                        <div>
-                            <div class="shop-card-top">
-                                <span class="shop-cat" style="color:#f97316">Крафт Оружия</span>
-                                <span class="font-mono" style="font-size:11px; color:var(--coin-gold)">${vulcanUnlocked ? 'СКРАФЧЕНО' : `${vulcan.costCoins}М + ${vulcan.costCrystals}КР`}</span>
-                            </div>
-                            <h3 class="shop-card-title" style="margin:6px 0;">${vulcan.name}</h3>
-                            <p class="shop-card-desc">${vulcan.note}</p>
-                        </div>
-                        <button class="shop-action-btn" data-craft-vulcan="1" ${vulcanUnlocked || !canCraft ? 'disabled' : ''}>
-                            ${vulcanUnlocked ? 'В АРСЕНАЛЕ (ВКЛАДКА ОРУЖИЕ)' : `СООРУДИТЬ ГАТЛИНГ (${vulcan.costCoins}М + ${vulcan.costCrystals}КР)`}
-                        </button>
-                    </div>
-                `;
-            }
-
-            html += `
-                <div class="shop-card">
-                    <div>
-                        <span class="shop-cat">Инженерия • Ур.${b.wallHpLvl}</span>
-                        <h3 class="shop-card-title" style="margin:6px 0;">УКРЕПЛЕНИЕ ФОРТ-СТЕН</h3>
-                        <p class="shop-card-desc">+22% к прочности всех стен, бойниц и рамп при постройке.</p>
-                    </div>
-                    <button class="shop-action-btn" data-bing="wall" ${g.crystals < wallCost ? 'disabled' : ''}>УСИЛИТЬ (${wallCost} КР)</button>
-                </div>
-                <div class="shop-card">
-                    <div>
-                        <span class="shop-cat">Оборона • Макс. ${b.maxTurrets}</span>
-                        <h3 class="shop-card-title" style="margin:6px 0;">КОНТРОЛЛЕР ТУРЕЛЕЙ</h3>
-                        <p class="shop-card-desc">+1 к лимиту одновременно активных Полимерных и Гатлинг-турелей.</p>
-                    </div>
-                    <button class="shop-action-btn" data-bing="turret" ${b.maxTurrets >= 8 || g.crystals < turretCost ? 'disabled' : ''}>${b.maxTurrets >= 8 ? 'МАКС' : `РАСШИРИТЬ (${turretCost} КР)`}</button>
-                </div>
-            `;
             html += '</div>';
 
             this.elShopContent.innerHTML = html;

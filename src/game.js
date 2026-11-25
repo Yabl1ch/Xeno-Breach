@@ -82,7 +82,10 @@
             this.toastTimer = 0;
 
             this._initThree();
-            this.map = new XB.MapBuilder(this.scene);
+            const maxAniso = (this.renderer.capabilities && typeof this.renderer.capabilities.getMaxAnisotropy === 'function')
+                ? Math.min(8, Math.max(1, this.renderer.capabilities.getMaxAnisotropy()))
+                : 4;
+            this.map = new XB.MapBuilder(this.scene, maxAniso);
             this.map.build();
 
             this.player = new XB.PlayerController(this.map, this.sound);
@@ -104,10 +107,10 @@
         _initThree() {
             this.canvas = document.getElementById('three-canvas');
             this.scene = new THREE.Scene();
-            this.scene.background = new THREE.Color(0x050d0a);
-            this.scene.fog = new THREE.FogExp2(0x06120d, 0.0068);
+            this.scene.background = new THREE.Color(0x040b08);
+            this.scene.fog = new THREE.FogExp2(0x06140f, 0.0046);
 
-            this.camera = new THREE.PerspectiveCamera(78, global.innerWidth / global.innerHeight, 0.1, 420);
+            this.camera = new THREE.PerspectiveCamera(78, global.innerWidth / global.innerHeight, 0.1, 440);
             this.camera.rotation.order = 'YXZ';
             this.scene.add(this.camera);
 
@@ -120,6 +123,13 @@
             this.renderer.setPixelRatio(Math.min(global.devicePixelRatio || 1, 2));
             this.renderer.shadowMap.enabled = true;
             this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            if (typeof THREE.sRGBEncoding !== 'undefined') {
+                this.renderer.outputEncoding = THREE.sRGBEncoding;
+            }
+            if (typeof THREE.ACESFilmicToneMapping !== 'undefined') {
+                this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                this.renderer.toneMappingExposure = 1.12;
+            }
         }
 
         _subscribeBus() {
