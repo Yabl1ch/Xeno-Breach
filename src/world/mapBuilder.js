@@ -773,6 +773,30 @@
             canopy.position.set(0, 2.35, -0.4);
             g.add(canopy);
 
+            // Roof spinning remote autocannon turret cupola
+            const turret = new THREE.Group();
+            turret.position.set(0, 2.95, 0.2);
+            const tBase = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.85, 0.45, 10), structMat);
+            const tGun = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 2.2, 8), darkSteelMat);
+            tGun.rotation.x = Math.PI / 2;
+            tGun.position.z = 1.1;
+            const tOptic = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.25, 0.35), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
+            tOptic.position.set(0.45, 0.12, 0.35);
+            turret.add(tBase, tGun, tOptic);
+            g.add(turret);
+            this.decorSpinners.push(turret);
+
+            // Sloped frontal armor glacis + twin cyan slit headlights
+            const frontShield = new THREE.Mesh(new THREE.BoxGeometry(4.3, 1.1, 0.5), darkSteelMat);
+            frontShield.position.set(0, 1.1, 4.15);
+            frontShield.rotation.x = -0.35;
+            g.add(frontShield);
+            [-1.5, 1.5].forEach(lx => {
+                const hl = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.22, 0.2), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+                hl.position.set(lx, 1.45, 4.15);
+                g.add(hl);
+            });
+
             [-2.35, 2.35].forEach(sx => {
                 [-2.6, 2.4].forEach(sz => {
                     const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.72, 1.6, 10), darkSteelMat);
@@ -816,11 +840,15 @@
             const specimen = new THREE.Mesh(new THREE.OctahedronGeometry(0.68, 1), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
             specimen.position.set(x, 3.1, z);
 
+            const holoHalo = new THREE.Mesh(new THREE.TorusGeometry(1.22, 0.06, 6, 20), new THREE.MeshBasicMaterial({ color: 0x67e8f9 }));
+            holoHalo.position.set(x, 3.1, z);
+            holoHalo.rotation.x = Math.PI / 2.2;
+
             const cap = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, 0.6, 16), darkSteelMat);
             cap.position.set(x, 5.45, z);
 
-            this.scene.add(glass, specimen, cap);
-            this.decorSpinners.push(specimen);
+            this.scene.add(glass, specimen, holoHalo, cap);
+            this.decorSpinners.push(specimen, holoHalo);
             this.boxes.push({
                 minX: x - 1.35, maxX: x + 1.35,
                 minY: 0, maxY: 5.8,
@@ -843,7 +871,21 @@
             const visor = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.55, 0.3), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
             visor.position.set(0, 4.8, 1.25);
 
-            g.add(legL, legR, torso, visor);
+            // Articulated crane arms + glowing plasma weld emitters + spinning reactor ring
+            [-2.05, 2.05].forEach(ax => {
+                const arm = new THREE.Mesh(new THREE.BoxGeometry(0.75, 2.6, 0.9), darkSteelMat);
+                arm.position.set(ax, 3.7, 0.45);
+                arm.rotation.x = -0.38;
+                const weldTip = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.55, 6), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+                weldTip.position.set(ax, 2.35, 1.15);
+                weldTip.rotation.x = Math.PI * 0.72;
+                g.add(arm, weldTip);
+            });
+            const coreSpin = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+            coreSpin.position.set(0, 3.8, 1.28);
+            this.decorSpinners.push(coreSpin);
+
+            g.add(legL, legR, torso, visor, coreSpin);
             g.traverse(c => {
                 if (c.isMesh) {
                     c.castShadow = true;
@@ -917,7 +959,16 @@
             body.castShadow = true;
             const stripe = new THREE.Mesh(new THREE.CylinderGeometry(0.73, 0.73, 0.32, 12), new THREE.MeshBasicMaterial({ color: stripeColor }));
             stripe.position.y = 0.85;
-            group.add(body, stripe);
+            const topRim = new THREE.Mesh(new THREE.TorusGeometry(0.68, 0.055, 6, 14), darkMatPlaceholder());
+            topRim.rotation.x = Math.PI / 2;
+            topRim.position.y = 1.65;
+            const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.14, 8), new THREE.MeshBasicMaterial({ color: stripeColor }));
+            cap.position.set(0.32, 1.7, 0);
+            group.add(body, stripe, topRim, cap);
+
+            function darkMatPlaceholder() {
+                return new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35, metalness: 0.85 });
+            }
 
             const barrelObj = { x, z, kind, group, hp: 35, alive: true };
             group.traverse(c => {

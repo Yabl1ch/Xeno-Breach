@@ -55,13 +55,23 @@
             this.camera.add(this.gloveLight);
 
             this.weaponRecoil = 0;
+            this.weaponRecoilRoll = 0;
             this.drawProgress = 1;
             this.minigunSpin = 0;
             this.minigunHeat = 0;
             this.shotgunPumpAnim = 0;
+            this.cryoDrumAngle = 0;
+            this.cryoDrumTarget = 0;
+            this.hydraFirePulse = 0;
+            this.swayX = 0;
+            this.swayY = 0;
+            this.lastYaw = null;
+            this.lastPitch = null;
+            this.strafeRoll = 0;
             this.gloveCastTimer = 0;
             this.gloveCastPower = 'shield';
             this.glovePoseOpen = 0;
+            this.gloveInnerRing = null;
 
             this._buildAllWeapons();
             this._buildPolymerGlove();
@@ -444,7 +454,10 @@
             this.gloveHoloRing = new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.009, 6, 20), this.gloveVeinsMat);
             this.gloveHoloRing.position.copy(this.gloveCore.position);
             this.gloveHoloRing.rotation.x = Math.PI / 2.5;
-            this.gloveHolder.add(this.gloveCore, this.gloveHoloRing);
+            this.gloveInnerRing = new THREE.Mesh(new THREE.TorusGeometry(0.044, 0.007, 6, 16), this.gloveVeinsMat);
+            this.gloveInnerRing.position.copy(this.gloveCore.position);
+            this.gloveInnerRing.rotation.y = Math.PI / 3;
+            this.gloveHolder.add(this.gloveCore, this.gloveHoloRing, this.gloveInnerRing);
 
             [
                 { x: 0.062, y: -0.005, z: -0.055, rotZ: -0.6, len: 0.072 },
@@ -478,15 +491,19 @@
 
         onWeaponFire(weaponIndex, weaponCfg, recoilMult = 1.0) {
             this.weaponRecoil = (weaponCfg.recoil || 0.08) * recoilMult;
+            this.weaponRecoilRoll = ((Math.random() - 0.5) * 0.09) * recoilMult;
             if (weaponCfg.id === 'minigun' || weaponCfg.id === 'vulcan_gatling') {
-                this.minigunSpin = 38;
+                this.minigunSpin = 42;
                 this.minigunHeat = Math.min(1, this.minigunHeat + 0.045);
             }
             if (weaponCfg.id === 'shotgun') {
                 this.shotgunPumpAnim = 1.0;
             }
-            if (weaponCfg.id === 'cryo_launcher' && this.cryoDrum) {
-                this.cryoDrum.rotation.z += Math.PI / 3;
+            if (weaponCfg.id === 'cryo_launcher') {
+                this.cryoDrumTarget += Math.PI / 3;
+            }
+            if (weaponCfg.id === 'hydra') {
+                this.hydraFirePulse = 1.0;
             }
             this.muzzleFlash.visible = true;
             this.muzzleFlash.material.color.setHex(weaponCfg.color);
@@ -526,6 +543,10 @@
                 chargeRatio,
                 chargeSeconds = 0,
                 polymerRatio = 1,
+                playerYaw = 0,
+                playerPitch = 0,
+                horizSpeed = 0,
+                moveRight = 0,
                 bobTime,
                 slideTimer,
                 wheelOpen,
@@ -537,34 +558,71 @@
 
             const tNow = performance.now() * 0.005;
 
+            // Smooth camera turn lag sway + strafe banking + sprint/bhop posture tilt
+            if (this.lastYaw !== null) {
+                let dYaw = playerYaw - this.lastYaw;
+                while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+                while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+                const dPitch = playerPitch - this.lastPitch;
+                this.swayX = Math.max(-0.045, Math.min(0.045, this.swayX + dYaw * 0.14));
+                this.swayY = Math.max(-0.04, Math.min(0.04, this.swayY - dPitch * 0.14));
+            }
+            this.lastYaw = playerYaw;
+            this.lastPitch = playerPitch;
+            this.swayX *= Math.exp(-12 * dt);
+            this.swayY *= Math.exp(-12 * dt);
+            this.strafeRoll += ((-moveRight * 0.05) - this.strafeRoll) * Math.min(1, dt * 11);
+
+            const speedTilt = Math.max(0, Math.min(1, (horizSpeed - 12) / 14));
             this.drawProgress = Math.min(1, this.drawProgress + dt * 6.5);
             const drawDrop = (1 - this.drawProgress) * 0.25;
             this.weaponRecoil = Math.max(0, this.weaponRecoil - dt * 1.35);
+            this.weaponRecoilRoll *= Math.exp(-14 * dt);
 
             const effReloadDur = reloadDur || (curWeapon.reloadTime * (boostActive ? 0.62 : 1.0));
             const reloadProg = reloading ? 1 - (reloadTimer / Math.max(0.1, effReloadDur)) : 0;
             const reloadDip = reloading ? Math.sin(reloadProg * Math.PI) * 0.28 : 0;
+            const reloadRoll = reloading ? Math.sin(reloadProg * Math.PI) * 0.36 : 0;
+            const reloadYaw = reloading ? Math.sin(reloadProg * Math.PI) * 0.22 : 0;
+            const boltPull = (reloading && reloadProg > 0.72) ? Math.sin(((reloadProg - 0.72) / 0.28) * Math.PI) * 0.1 : 0;
 
             const curMag = this.weaponMags[weaponIndex];
             if (curMag) {
-                const magDrop = reloading ? Math.sin(reloadProg * Math.PI) * 0.16 : 0;
+                const magDrop = reloading
+                    ? (reloadProg < 0.5 ? Math.sin(reloadProg * Math.PI) * 0.24 : Math.pow(Math.max(0, 1 - reloadProg) * 2, 1.4) * 0.24)
+                    : 0;
                 curMag.position.y = (curWeapon.id === 'minigun' || curWeapon.id === 'smg' ? -0.15 : (curWeapon.id === 'flamer' ? -0.12 : -0.13)) - magDrop;
             }
 
+            const breathY = Math.sin(tNow * 0.55) * 0.004;
             this.weaponHolder.position.set(
-                0.31 + Math.cos(bobTime * 0.5) * 0.016,
-                -0.25 - reloadDip - drawDrop - (buildMode ? 0.14 : 0) + Math.abs(Math.sin(bobTime)) * 0.016 - (slideTimer > 0 ? 0.05 : 0),
-                -0.52 + this.weaponRecoil
+                0.31 + this.swayX - speedTilt * 0.03 + Math.cos(bobTime * 0.5) * (0.016 + speedTilt * 0.008),
+                -0.25 + breathY + this.swayY - reloadDip - drawDrop - (buildMode ? 0.14 : 0) + Math.abs(Math.sin(bobTime)) * 0.016 - (slideTimer > 0 ? 0.05 : 0),
+                -0.52 + this.weaponRecoil + boltPull * 0.25
             );
-            this.weaponHolder.rotation.x = this.weaponRecoil * 1.15 - reloadDip * 1.65 - drawDrop * 1.2 - (buildMode ? 0.45 : 0);
-            this.weaponHolder.rotation.z = (slideTimer > 0 ? -0.22 : 0) + (reloading ? 0.28 : 0);
+            this.weaponHolder.rotation.set(
+                this.weaponRecoil * 1.15 - reloadDip * 1.35 - drawDrop * 1.2 - (buildMode ? 0.45 : 0) - speedTilt * 0.06,
+                reloadYaw + speedTilt * 0.12,
+                this.strafeRoll + this.weaponRecoilRoll + (slideTimer > 0 ? -0.24 : 0) + reloadRoll
+            );
 
             if (this.rifleBolt && curWeapon.id === 'rifle') {
-                this.rifleBolt.position.z = 0.02 + this.weaponRecoil * 1.2;
+                this.rifleBolt.position.z = 0.02 + this.weaponRecoil * 1.2 + boltPull;
             }
-            if (this.shotgunPumpAnim > 0) {
+            if (this.shotgunPump && (this.shotgunPumpAnim > 0 || boltPull > 0)) {
                 this.shotgunPumpAnim = Math.max(0, this.shotgunPumpAnim - dt * 2.8);
-                this.shotgunPump.position.z = -0.29 + Math.sin(this.shotgunPumpAnim * Math.PI) * 0.11;
+                this.shotgunPump.position.z = -0.29 + Math.sin(this.shotgunPumpAnim * Math.PI) * 0.11 + boltPull;
+            }
+            if (this.cryoDrum) {
+                this.cryoDrumAngle += (this.cryoDrumTarget - this.cryoDrumAngle) * Math.min(1, dt * 14);
+                this.cryoDrum.rotation.z = this.cryoDrumAngle;
+            }
+            if (this.hydraPorts.length > 0 && curWeapon.id === 'hydra') {
+                if (this.hydraFirePulse > 0) this.hydraFirePulse = Math.max(0, this.hydraFirePulse - dt * 2.6);
+                const plunge = Math.sin(this.hydraFirePulse * Math.PI) * 0.06;
+                this.hydraPorts.forEach((nose, idx) => {
+                    nose.position.z = -0.5 + plunge + Math.sin(tNow * 1.5 + idx) * 0.004;
+                });
             }
             if (this.minigunBarrelCluster || this.vulcanBarrelCluster) {
                 if (this.minigunSpin > 0) {
@@ -574,33 +632,44 @@
                 }
                 this.minigunHeat = Math.max(0, this.minigunHeat - dt * 0.25);
                 if (this.minigunHeatGlow) {
-                    this.minigunHeatGlow.material.opacity = 0.1 + this.minigunHeat * 0.65;
+                    this.minigunHeatGlow.material.opacity = 0.1 + this.minigunHeat * 0.68;
+                    this.minigunHeatGlow.material.color.setHex(this.minigunHeat > 0.65 ? 0xfde047 : 0xf97316);
                 }
             }
             if (this.polyCoreOrb && curWeapon.id === 'polymer_beam') {
-                const infScale = isCharging ? (1 + Math.min(7.5, Math.sqrt(Math.max(0, chargeSeconds)) * 2.6 + chargeRatio * 1.4)) : 1.0;
+                const infScale = isCharging
+                    ? (1 + Math.min(7.5, Math.sqrt(Math.max(0, chargeSeconds)) * 2.6 + chargeRatio * 1.4))
+                    : (1.0 + Math.sin(tNow * 1.4) * 0.09);
                 this.polyCoreOrb.scale.setScalar(infScale);
-                this.polyCoreOrb.rotation.y += dt * (isCharging ? (10 + chargeSeconds * 4) : 2.5);
+                this.polyCoreOrb.rotation.y += dt * (isCharging ? (10 + chargeSeconds * 4) : 2.8);
+                this.polyCoreOrb.rotation.x += dt * (isCharging ? 6.0 : 1.5);
                 this.polyCoreOrb.material.color.setHex(chargeSeconds > 3.0 ? 0xfacc15 : (chargeSeconds > 1.2 ? 0x67e8f9 : 0x34d399));
                 this.polyRings.forEach((pr, idx) => {
-                    pr.rotation.z += dt * (isCharging ? (10 + Math.min(30, chargeSeconds * 8)) : 2.0) * (idx % 2 === 0 ? 1 : -1);
+                    pr.rotation.z += dt * (isCharging ? (10 + Math.min(30, chargeSeconds * 8)) : 2.2) * (idx % 2 === 0 ? 1 : -1);
+                    pr.rotation.x = Math.sin(tNow * 0.9 + idx * 1.1) * (isCharging ? 0.35 : 0.12);
                 });
             }
             if (this.flamerPilot) {
-                this.flamerPilot.scale.setScalar(0.85 + Math.sin(tNow * 6) * 0.25);
+                this.flamerPilot.scale.set(
+                    0.85 + Math.sin(tNow * 6.5) * 0.25,
+                    0.9 + Math.cos(tNow * 8.2) * 0.28,
+                    0.85 + Math.sin(tNow * 5.1) * 0.25
+                );
             }
-            if (this.chargeOrbMesh && isCharging && curWeapon.id === 'nova') {
-                this.chargeOrbMesh.scale.setScalar(1 + chargeRatio * 3.1);
+            if (this.chargeOrbMesh && curWeapon.id === 'nova') {
+                const novaS = isCharging ? (1 + chargeRatio * 3.1) : (0.92 + Math.sin(tNow * 1.5) * 0.1);
+                this.chargeOrbMesh.scale.setScalar(novaS);
                 this.chargeFins.forEach(f => {
-                    const spread = 0.1 + chargeRatio * 0.09;
+                    const spread = 0.1 + (isCharging ? chargeRatio * 0.09 : Math.sin(tNow * 0.8) * 0.008);
                     f.mesh.position.x = Math.cos(f.angle + tNow * 0.8) * spread;
                     f.mesh.position.y = Math.sin(f.angle + tNow * 0.8) * spread + 0.02;
                     f.mesh.rotation.z = f.angle + tNow * 0.8;
                 });
             }
             if (this.teslaTip) {
-                this.teslaTip.rotation.y += dt * 4.2;
-                this.teslaTip.rotation.x += dt * 2.6;
+                this.teslaTip.rotation.y += dt * 4.6;
+                this.teslaTip.rotation.x += dt * 2.8;
+                this.teslaTip.scale.setScalar(0.92 + Math.sin(tNow * 2.5) * 0.14);
             }
             if (this.railCaps.length > 0 && curWeapon.id === 'railgun') {
                 this.railCaps.forEach((cap, idx) => {
@@ -613,19 +682,23 @@
                 if (this.muzzleLight.intensity < 1.2) this.muzzleFlash.visible = false;
             }
 
-            // Left-Hand Polymer Glove + Live Wrist Gauge
+            // Left-Hand Polymer Glove + Multi-Ring Holo Iris + Organic Finger Ripple
             if (this.polymerGaugeFill) {
                 const pr = Math.max(0.06, Math.min(1, polymerRatio));
                 this.polymerGaugeFill.scale.set(1, 1, pr);
             }
-            this.gloveCore.rotation.y += dt * (wheelOpen || buildMode ? 6.0 : 2.2);
-            this.gloveHoloRing.rotation.z -= dt * (wheelOpen || buildMode ? 5.0 : 1.8);
+            this.gloveCore.rotation.y += dt * (wheelOpen || buildMode || isCharging ? 7.2 : 2.4);
+            this.gloveHoloRing.rotation.z -= dt * (wheelOpen || buildMode || isCharging ? 5.8 : 1.9);
+            if (this.gloveInnerRing) {
+                this.gloveInnerRing.rotation.x += dt * (wheelOpen || isCharging ? 6.4 : 2.5);
+                this.gloveInnerRing.scale.setScalar(isCharging ? 1.25 : 0.94 + Math.sin(tNow * 1.8) * 0.08);
+            }
 
             const targetWheelPose = (wheelOpen || buildMode) ? 1 : 0;
             this.glovePoseOpen += (targetWheelPose - this.glovePoseOpen) * Math.min(1, dt * 14);
 
             let castThrustZ = 0, castLiftY = 0, castRoll = 0;
-            let fingerCurl = -0.35;
+            let fingerCurl = isCharging ? -0.78 : -0.35;
 
             if (this.gloveCastTimer > 0) {
                 this.gloveCastTimer = Math.max(0, this.gloveCastTimer - dt);
@@ -633,12 +706,21 @@
                 if (this.gloveCastPower === 'timestop' || this.gloveCastPower === 'timeslow') {
                     castThrustZ = -0.18 * bell;
                     castLiftY = 0.14 * bell;
-                    castRoll = 0.65 * bell;
-                    fingerCurl = -1.25 * bell;
+                    castRoll = 0.72 * bell;
+                    fingerCurl = -1.28 * bell;
+                } else if (this.gloveCastPower === 'freeze' || this.gloveCastPower === 'fire') {
+                    castThrustZ = -0.28 * bell;
+                    castLiftY = 0.08 * bell;
+                    castRoll = -0.35 * bell;
+                    fingerCurl = 0.48 * bell;
+                } else if (this.gloveCastPower === 'telekinesis') {
+                    castThrustZ = -0.2 * bell;
+                    castLiftY = 0.18 * bell;
+                    fingerCurl = -0.95 * bell;
                 } else if (this.gloveCastPower === 'knockback') {
-                    castThrustZ = -0.32 * bell;
+                    castThrustZ = -0.34 * bell;
                     castLiftY = 0.1 * bell;
-                    fingerCurl = 0.45 * bell;
+                    fingerCurl = 0.52 * bell;
                 } else {
                     castThrustZ = -0.26 * bell;
                     castLiftY = 0.1 * bell;
@@ -649,22 +731,23 @@
             }
 
             this.gloveFingers.forEach((f, idx) => {
-                const targetX = fingerCurl + Math.sin(tNow * 0.7 + idx * 0.6) * 0.06;
+                const wave = Math.sin(tNow * 1.4 - idx * 0.65) * 0.1;
+                const targetX = fingerCurl + wave;
                 f.rotation.x += (targetX - f.rotation.x) * Math.min(1, dt * 16);
             });
 
             this.gloveHolder.position.set(
-                -0.31 + this.glovePoseOpen * 0.1 - Math.cos(bobTime * 0.5) * 0.014,
-                -0.21 + this.glovePoseOpen * 0.08 + castLiftY + Math.abs(Math.sin(bobTime)) * 0.014 - (slideTimer > 0 ? 0.04 : 0),
+                -0.31 + this.swayX * 0.8 + this.glovePoseOpen * 0.1 - Math.cos(bobTime * 0.5) * 0.014,
+                -0.21 + breathY * 1.1 + this.swayY * 0.8 + this.glovePoseOpen * 0.08 + castLiftY + Math.abs(Math.sin(bobTime)) * 0.014 - (slideTimer > 0 ? 0.04 : 0),
                 -0.46 + castThrustZ - this.glovePoseOpen * 0.05
             );
             this.gloveHolder.rotation.set(
                 this.glovePoseOpen * 0.34 + (polymerFireBuffTimer > 0 ? Math.sin(tNow * 4) * 0.04 : 0),
                 0.14 + this.glovePoseOpen * 0.22,
-                castRoll - this.glovePoseOpen * 0.22
+                this.strafeRoll * 0.7 + castRoll - this.glovePoseOpen * 0.22
             );
 
-            this.gloveLight.intensity = 0.5 + (this.gloveCastTimer > 0 ? 2.4 : 0) + (timeStopTimer > 0 || timeSlowTimer > 0 ? 0.9 : 0);
+            this.gloveLight.intensity = 0.5 + (this.gloveCastTimer > 0 ? 2.4 : 0) + (isCharging ? 0.8 : 0) + (timeStopTimer > 0 || timeSlowTimer > 0 ? 0.9 : 0);
         }
     }
 

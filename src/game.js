@@ -1369,6 +1369,7 @@
             const chargeRatio = curWeapon.kind === 'polymer_sphere'
                 ? Math.min(3.5, this.chargeTime / 2.2)
                 : (curWeapon.maxChargeTime ? this.chargeTime / curWeapon.maxChargeTime : 0);
+            const moveRight = (this.keys['KeyD'] ? 1 : 0) - (this.keys['KeyA'] ? 1 : 0);
             this.vm.update(rawDt, {
                 weaponIndex: wIdx,
                 curWeapon,
@@ -1380,6 +1381,10 @@
                 chargeRatio,
                 chargeSeconds: this.chargeTime,
                 polymerRatio: this.combat.polymerEnergy / Math.max(1, this.combat.maxPolymerEnergy),
+                playerYaw: this.player.yaw,
+                playerPitch: this.player.pitch,
+                horizSpeed,
+                moveRight,
                 bobTime: this.player.bobTime,
                 slideTimer: this.player.slideTimer,
                 wheelOpen: this.ui.wheelOpen,

@@ -910,7 +910,7 @@
 
             if (alien.hp <= 0) {
                 alien.dying = true;
-                alien.deathTimer = 0.42;
+                alien.deathTimer = 0.65;
                 this.sound.playAlienDeath();
 
                 this.polymerEnergy = Math.min(this.maxPolymerEnergy, this.polymerEnergy + (alien.cfg.isBoss ? 36 : 10));
@@ -1055,6 +1055,7 @@
                 this.shieldDomeMesh.position.set(playerPos.x, playerPos.y + 1.35, playerPos.z);
                 this.shieldDomeMesh.rotation.y += dt * 1.4;
                 this.shieldDomeMesh.rotation.x += dt * 0.6;
+                this.shieldDomeMesh.scale.setScalar(1.0 + Math.sin(performance.now() * 0.008) * 0.045);
             } else {
                 this.shieldDomeMesh.visible = false;
             }
@@ -1091,6 +1092,10 @@
                     );
 
                 if (b.isGrenade) {
+                    if (b.ringMesh) {
+                        const pulse = 1 + Math.sin(performance.now() * 0.015) * 0.14;
+                        b.ringMesh.scale.set(pulse, pulse, 1);
+                    }
                     const hitGround = b.mesh.position.y <= 0.25 || wallSweep.hit;
                     if (hitGround || b.life <= 0) {
                         const boomPos = wallSweep.hit && wallSweep.point ? wallSweep.point : b.mesh.position.clone();
@@ -1184,7 +1189,16 @@
                 }
 
                 o.mesh.position.addScaledVector(o.vel, dt);
-                o.mesh.rotation.y += dt * 7;
+                if (o.kind === 'homing') {
+                    o.mesh.lookAt(o.mesh.position.clone().add(o.vel));
+                    o.trailAcc = (o.trailAcc || 0) + dt;
+                    if (o.trailAcc >= 0.07) {
+                        o.trailAcc = 0;
+                        this._spawnParticles(o.mesh.position, 0xf43f5e, 1, 2.5);
+                    }
+                } else {
+                    o.mesh.rotation.y += dt * 7;
+                }
                 if (o.kind === 'polymer_sphere') {
                     o.mesh.rotation.x += dt * 5;
                     // Radiation arcs while flying!

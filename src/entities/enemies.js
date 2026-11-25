@@ -159,6 +159,7 @@
                 torsoPivot.add(turbCowling, backTurbine);
             }
 
+            let ammoDrum = null;
             if (type === 'grenadier') {
                 const mortar = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.21, 0.82, 12), armorMat);
                 mortar.position.set(0, 0.98, -0.26);
@@ -166,10 +167,14 @@
                 const mRim = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.035, 6, 16), eyeMat);
                 mRim.position.set(0, 1.35, -0.4);
                 mRim.rotation.x = Math.PI / 2 - 0.38;
-                const ammoDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.28, 10), skinMat);
+                ammoDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.28, 10), skinMat);
                 ammoDrum.rotation.z = Math.PI / 2;
                 ammoDrum.position.set(-0.34, 0.56, -0.22);
-                torsoPivot.add(mortar, mRim, ammoDrum);
+                const mast = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.08), servoMat);
+                mast.position.set(0.32, 0.98, 0.04);
+                const sensor = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.18), eyeMat);
+                sensor.position.set(0.32, 1.2, 0.08);
+                torsoPivot.add(mortar, mRim, ammoDrum, mast, sensor);
             }
 
             let thrusterGlows = [];
@@ -456,6 +461,7 @@
                 bossRing,
                 bossOuterRing,
                 backTurbine,
+                ammoDrum,
                 laserLine,
                 skinMat,
                 hp,
@@ -495,6 +501,8 @@
                 telekinesisSlammed: false,
                 dying: false,
                 deathTimer: 0,
+                deathSpinDir: Math.random() < 0.5 ? 1 : -1,
+                deathBurstDone: false,
                 walkPhase: Math.random() * Math.PI * 2,
                 lastStepSign: 1
             };
@@ -526,14 +534,27 @@
                 const a = this.aliens[i];
                 const pos = a.group.position;
 
-                // 1. Death crumple animation
+                // 1. Kinetic Mechanical Death Disassembly Animation
                 if (a.dying) {
                     if (a.laserLine) a.laserLine.visible = false;
                     a.deathTimer -= rawDt;
-                    const p = 1 - Math.max(0, a.deathTimer / 0.42);
-                    a.torsoPivot.rotation.x = a.baseLean + p * 1.45;
-                    a.hipPivot.position.y = Math.max(0.22, 1.08 - p * 0.92);
-                    a.group.scale.setScalar(a.baseScale * Math.max(0.05, 1 - p * 0.45));
+                    const p = Math.min(1, Math.max(0, 1 - a.deathTimer / 0.65));
+                    a.torsoPivot.rotation.x = a.baseLean + p * 1.55;
+                    a.torsoPivot.rotation.z += a.deathSpinDir * rawDt * 2.2;
+                    a.hipPivot.position.y = Math.max(0.18, 1.08 - p * 0.94);
+                    a.headGroup.position.y += rawDt * (3.6 - p * 5.2);
+                    a.headGroup.position.x += a.deathSpinDir * rawDt * 1.3;
+                    a.headGroup.rotation.z += a.deathSpinDir * rawDt * 8.5;
+                    a.armL.rotation.x -= rawDt * 3.8;
+                    a.armR.rotation.x += rawDt * 3.4;
+                    if (p > 0.35 && !a.deathBurstDone) {
+                        a.deathBurstDone = true;
+                        spawnParticles(pos.clone().add(new THREE.Vector3(0, 1.1, 0)), 0xf97316, 10, 8);
+                    }
+                    if (p > 0.72) {
+                        const shrink = 1 - (p - 0.72) / 0.28;
+                        a.group.scale.setScalar(a.baseScale * Math.max(0.05, shrink));
+                    }
                     if (a.deathTimer <= 0) {
                         if (a.laserLine) this.scene.remove(a.laserLine);
                         this.scene.remove(a.group);
@@ -963,10 +984,12 @@
                 }
             }
 
-            a.headGroup.rotation.y = Math.sin(a.walkPhase * 0.5) * 0.08;
-            a.coreGlow.rotation.y += dt * 3.0;
-            if (a.backTurbine) a.backTurbine.rotation.z += dt * 7.5;
-            if (a.bossOuterRing) a.bossOuterRing.rotation.z -= dt * 2.2;
+            a.headGroup.rotation.y = Math.sin(a.walkPhase * 0.55) * 0.14;
+            a.coreGlow.rotation.y += dt * 3.2;
+            a.coreGlow.scale.setScalar(0.92 + Math.sin(a.walkPhase * 0.8) * 0.12);
+            if (a.backTurbine) a.backTurbine.rotation.z += dt * (a.meleeChargeWindup > 0 ? 18.0 : 7.5);
+            if (a.bossOuterRing) a.bossOuterRing.rotation.z -= dt * 2.4;
+            if (a.ammoDrum && a.attackWindup > 0) a.ammoDrum.rotation.x += dt * 11.0;
         }
 
         _resolveAlienCollisions(pos, radius, enemyHeight = 2.4) {
