@@ -706,19 +706,24 @@
             });
             const glowMat = new THREE.MeshBasicMaterial({ color: isGatling ? 0xf97316 : 0x4ade80 });
 
-            // Heavy tripod legs
+            // Heavy tripod legs + stabilizer feet + armored collar
             for (let k = 0; k < 3; k++) {
                 const ang = (k / 3) * Math.PI * 2;
                 const leg = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.95, 0.18), steelMat);
                 leg.position.set(Math.cos(ang) * 0.44, 0.42, Math.sin(ang) * 0.44);
                 leg.rotation.z = Math.cos(ang) * 0.42;
                 leg.rotation.x = -Math.sin(ang) * 0.42;
-                group.add(leg);
+                const pad = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.28), bodyMat);
+                pad.position.set(Math.cos(ang) * 0.62, 0.04, Math.sin(ang) * 0.62);
+                group.add(leg, pad);
             }
 
             const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.42, 0.55, 10), steelMat);
             pedestal.position.y = 0.78;
-            group.add(pedestal);
+            const rotCollar = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.045, 6, 16), glowMat);
+            rotCollar.rotation.x = Math.PI / 2;
+            rotCollar.position.y = 1.06;
+            group.add(pedestal, rotCollar);
 
             const headPivot = new THREE.Group();
             headPivot.position.y = 1.24;
@@ -758,16 +763,19 @@
                 barrelCluster.add(tipRing);
                 headPivot.add(barrelCluster);
             } else {
-                // Twin-barrel Polymer Plasma Sentry!
+                // Twin-barrel Polymer Plasma Sentry
+                barrelCluster = new THREE.Group();
+                barrelCluster.position.set(0, 0, 0.56);
                 [-0.16, 0.16].forEach(bx => {
                     const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.068, 0.82, 8), steelMat);
                     bar.rotation.x = Math.PI / 2;
-                    bar.position.set(bx, 0, 0.56);
+                    bar.position.set(bx, 0, 0);
                     const core = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.65, 8), glowMat);
                     core.rotation.x = Math.PI / 2;
-                    core.position.set(bx, 0.06, 0.42);
-                    headPivot.add(bar, core);
+                    core.position.set(bx, 0.06, -0.14);
+                    barrelCluster.add(bar, core);
                 });
+                headPivot.add(barrelCluster);
                 const holoHalo = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.03, 6, 20), glowMat);
                 holoHalo.rotation.x = Math.PI / 2;
                 holoHalo.position.y = 0.45;
@@ -800,6 +808,7 @@
                 damage: dmg,
                 range,
                 spinVel: 0,
+                recoilOffset: 0,
                 color: isGatling ? 0xf97316 : 0x4ade80
             };
 
@@ -864,6 +873,7 @@
                     t.fireTimer -= dt;
                     if (t.fireTimer <= 0 && Math.abs(diff) < 0.45) {
                         t.fireTimer = t.fireInterval;
+                        t.recoilOffset = t.isGatling ? 0.08 : 0.14;
                         muzzleWorld.set(0, 0, 1.05).applyMatrix4(t.headPivot.matrixWorld);
                         combat._spawnTracer(muzzleWorld, aCenter, t.color, t.isGatling ? 0.045 : 0.075);
                         if (!t.isGatling) {
@@ -880,8 +890,12 @@
                     t.spinVel = Math.max(0, t.spinVel - dt * 24);
                 }
 
-                if (t.barrelCluster && t.spinVel > 0.1) {
-                    t.barrelCluster.rotation.z += t.spinVel * dt;
+                if (t.recoilOffset > 0) {
+                    t.recoilOffset = Math.max(0, t.recoilOffset - dt * 1.1);
+                }
+                if (t.barrelCluster) {
+                    t.barrelCluster.position.z = (t.isGatling ? 0.85 : 0.56) - t.recoilOffset;
+                    if (t.spinVel > 0.1) t.barrelCluster.rotation.z += t.spinVel * dt;
                 }
             }
 

@@ -1,8 +1,8 @@
 /**
  * First-Person ViewModel Rig:
- *  - Right-hand arm + 11 distinct 3D sci-fi weapons (including Polymer Beam Cannon "ГЕЛИОС-П")
- *  - Dynamic visible 3D Attachments (Barrel, Extended Mag, Holo Optic, Tactical Core)
- *  - Left-hand Atomic Heart Polymer Glove with articulated fingers & dynamic ability lighting
+ *  - Articulated right forearm + wrist cuff + 12 high-detail sci-fi 3D weapons
+ *  - Dynamic visible 3D Attachments (Machined Suppressor, High-Cap Drum, Reflex Optic, Plasma Core)
+ *  - Articulated Left-Hand Atomic Heart Polymer Glove with phalanx segments, knuckle armor & live polymer gauge
  */
 (function (global) {
     'use strict';
@@ -25,6 +25,7 @@
             this.shotgunPump = null;
             this.minigunBarrelCluster = null;
             this.minigunHeatGlow = null;
+            this.vulcanBarrelCluster = null;
             this.polyCoreOrb = null;
             this.polyRings = [];
             this.flamerPilot = null;
@@ -48,6 +49,7 @@
             this.gloveCore = null;
             this.gloveHoloRing = null;
             this.gloveVeinsMat = null;
+            this.polymerGaugeFill = null;
             this.gloveLight = new THREE.PointLight(0x34d399, 0.5, 5.5);
             this.gloveLight.position.set(-0.3, -0.18, -0.62);
             this.camera.add(this.gloveLight);
@@ -66,17 +68,27 @@
         }
 
         _buildAllWeapons() {
-            const darkAlloy = new THREE.MeshStandardMaterial({ color: 0x111e19, metalness: 0.85, roughness: 0.25 });
-            const gunSteel = new THREE.MeshStandardMaterial({ color: 0x3b5249, metalness: 0.78, roughness: 0.3 });
-            const armorSleeve = new THREE.MeshStandardMaterial({ color: 0x1b2e26, metalness: 0.65, roughness: 0.4 });
-            const opticMat = new THREE.MeshBasicMaterial({ color: 0x4ade80, transparent: true, opacity: 0.55 });
+            const darkAlloy = new THREE.MeshStandardMaterial({ color: 0x0f1c17, metalness: 0.86, roughness: 0.24 });
+            const gunSteel = new THREE.MeshStandardMaterial({ color: 0x3b544a, metalness: 0.78, roughness: 0.28 });
+            const warmSteel = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.82, roughness: 0.26 });
+            const armorSleeve = new THREE.MeshStandardMaterial({ color: 0x1a2e25, metalness: 0.65, roughness: 0.38 });
+            const bronzeTrim = new THREE.MeshStandardMaterial({ color: 0x92400e, metalness: 0.68, roughness: 0.34 });
+            const opticMat = new THREE.MeshBasicMaterial({ color: 0x4ade80, transparent: true, opacity: 0.58 });
 
-            const rArm = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 0.42), armorSleeve);
-            rArm.position.set(0.03, -0.11, 0.25);
-            rArm.rotation.x = 0.25;
-            this.weaponHolder.add(rArm);
+            // Articulated Right Forearm + Armor Cuff + Pistol Grip Hand
+            const rArm = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.105, 0.38), armorSleeve);
+            rArm.position.set(0.03, -0.115, 0.26);
+            rArm.rotation.x = 0.24;
+            const rCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.072, 0.1, 8), darkAlloy);
+            rCuff.rotation.x = Math.PI / 2 + 0.24;
+            rCuff.position.set(0.025, -0.095, 0.14);
+            const rHand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.085, 0.1), gunSteel);
+            rHand.position.set(0.015, -0.085, 0.055);
+            const rThumb = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.032, 0.07), armorSleeve);
+            rThumb.position.set(-0.042, -0.045, 0.035);
+            this.weaponHolder.add(rArm, rCuff, rHand, rThumb);
 
-            const makeWeaponGroup = (id) => {
+            const makeWeaponGroup = () => {
                 const g = new THREE.Group();
                 g.visible = false;
                 this.weaponHolder.add(g);
@@ -84,228 +96,223 @@
                 return g;
             };
 
-            // 0: rifle
+            const addMesh = (g, geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => {
+                const m = new THREE.Mesh(geo, mat);
+                m.position.set(x, y, z);
+                if (rx) m.rotation.x = rx;
+                if (ry) m.rotation.y = ry;
+                if (rz) m.rotation.z = rz;
+                g.add(m);
+                return m;
+            };
+
+            // 0: rifle ("ПЛАЗМОМЁТ MK-IV")
             {
-                const g = makeWeaponGroup('rifle');
-                const body = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.14, 0.58), darkAlloy);
-                const hg = new THREE.Mesh(new THREE.BoxGeometry(0.125, 0.11, 0.32), gunSteel);
-                hg.position.set(0, 0.01, -0.22);
-                const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.028, 0.44, 10), gunSteel);
-                barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.025, -0.42);
-                this.rifleBolt = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.03, 0.12), gunSteel);
-                this.rifleBolt.position.set(0.055, 0.045, 0.02);
-                const glow = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.028, 0.36), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
-                glow.position.set(0, 0.045, -0.12);
-                const mag = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.18, 0.09), gunSteel);
-                mag.position.set(0, -0.13, -0.08); mag.rotation.x = 0.18;
-                g.add(body, hg, barrel, this.rifleBolt, glow, mag);
+                const g = makeWeaponGroup();
+                const em = new THREE.MeshBasicMaterial({ color: 0x4ade80 });
+                addMesh(g, new THREE.BoxGeometry(0.105, 0.125, 0.56), darkAlloy, 0, 0, -0.02);
+                addMesh(g, new THREE.BoxGeometry(0.088, 0.045, 0.42), gunSteel, 0, 0.078, -0.06); // upper receiver
+                addMesh(g, new THREE.BoxGeometry(0.06, 0.02, 0.36), warmSteel, 0, 0.106, -0.1); // picatinny rail
+                addMesh(g, new THREE.BoxGeometry(0.118, 0.095, 0.3), gunSteel, 0, 0.01, -0.26); // shrouded handguard
+                addMesh(g, new THREE.CylinderGeometry(0.023, 0.027, 0.46, 10), warmSteel, 0, 0.024, -0.44, Math.PI / 2);
+                addMesh(g, new THREE.CylinderGeometry(0.034, 0.032, 0.08, 10), darkAlloy, 0, 0.024, -0.66, Math.PI / 2); // muzzle brake
+                addMesh(g, new THREE.BoxGeometry(0.016, 0.035, 0.03), darkAlloy, 0, 0.125, -0.26); // front sight post
+                this.rifleBolt = addMesh(g, new THREE.BoxGeometry(0.038, 0.028, 0.11), warmSteel, 0.056, 0.05, 0.02);
+                addMesh(g, new THREE.BoxGeometry(0.118, 0.022, 0.34), em, 0, 0.042, -0.14); // plasma core strip
+                const mag = addMesh(g, new THREE.BoxGeometry(0.054, 0.18, 0.088), gunSteel, 0, -0.13, -0.08, 0.18);
                 this.weaponMags[0] = mag;
             }
 
-            // 1: shotgun
+            // 1: shotgun ("ЭНЕРГО-ДРОБОВИК X7")
             {
-                const g = makeWeaponGroup('shotgun');
-                const body = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.5), darkAlloy);
-                const b1 = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.42, 10), gunSteel);
-                const b2 = b1.clone();
-                b1.rotation.x = Math.PI / 2; b1.position.set(-0.038, 0.025, -0.36);
-                b2.rotation.x = Math.PI / 2; b2.position.set( 0.038, 0.025, -0.36);
-                this.shotgunPump = new THREE.Mesh(new THREE.BoxGeometry(0.145, 0.075, 0.22), new THREE.MeshStandardMaterial({ color: 0x92400e, metalness: 0.4, roughness: 0.5 }));
-                this.shotgunPump.position.set(0, -0.055, -0.28);
-                const glow = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.032, 0.24), new THREE.MeshBasicMaterial({ color: 0xf59e0b }));
-                glow.position.set(0, 0.055, -0.1);
-                g.add(body, b1, b2, this.shotgunPump, glow);
+                const g = makeWeaponGroup();
+                const em = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+                addMesh(g, new THREE.BoxGeometry(0.145, 0.145, 0.48), darkAlloy, 0, 0, 0);
+                addMesh(g, new THREE.BoxGeometry(0.13, 0.03, 0.38), gunSteel, 0, 0.082, -0.18); // top rib
+                addMesh(g, new THREE.CylinderGeometry(0.03, 0.03, 0.44, 10), warmSteel, -0.038, 0.026, -0.37, Math.PI / 2);
+                addMesh(g, new THREE.CylinderGeometry(0.03, 0.03, 0.44, 10), warmSteel, 0.038, 0.026, -0.37, Math.PI / 2);
+                addMesh(g, new THREE.BoxGeometry(0.125, 0.055, 0.045), darkAlloy, 0, 0.026, -0.52); // barrel clamp bridge
+                this.shotgunPump = addMesh(g, new THREE.BoxGeometry(0.148, 0.072, 0.22), bronzeTrim, 0, -0.055, -0.29);
+                addMesh(g, new THREE.BoxGeometry(0.156, 0.028, 0.24), em, 0, 0.055, -0.1);
+                // Side 4-shell carrier saddle!
+                for (let s = 0; s < 4; s++) {
+                    addMesh(g, new THREE.CylinderGeometry(0.011, 0.011, 0.048, 6), em, -0.078, 0.005, -0.14 + s * 0.04);
+                }
             }
 
-            // 2: minigun
+            // 2: minigun ("ПУЛЕМЁТ «ВУЛКАН-200»")
             {
-                const g = makeWeaponGroup('minigun');
-                const body = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.46), darkAlloy);
-                body.position.set(0, -0.04, 0.02);
-                const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.24, 14), new THREE.MeshStandardMaterial({ color: 0x713f12, metalness: 0.55, roughness: 0.4 }));
-                drum.rotation.z = Math.PI / 2; drum.position.set(-0.13, -0.15, -0.02);
+                const g = makeWeaponGroup();
+                const em = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+                addMesh(g, new THREE.BoxGeometry(0.22, 0.22, 0.46), darkAlloy, 0, -0.04, 0.02);
+                addMesh(g, new THREE.BoxGeometry(0.24, 0.04, 0.3), gunSteel, 0, 0.08, -0.05); // top motor block
+                addMesh(g, new THREE.TorusGeometry(0.11, 0.016, 6, 14, Math.PI), warmSteel, 0, 0.14, 0.02); // top carry hoop
+                const drum = addMesh(g, new THREE.CylinderGeometry(0.115, 0.115, 0.24, 14), bronzeTrim, -0.13, -0.15, -0.02, 0, 0, Math.PI / 2);
                 this.weaponMags[2] = drum;
+                addMesh(g, new THREE.BoxGeometry(0.05, 0.12, 0.16), warmSteel, -0.09, -0.08, -0.04, 0, 0, 0.35); // ammo feed belt chute
 
                 this.minigunBarrelCluster = new THREE.Group();
                 this.minigunBarrelCluster.position.set(0, -0.02, -0.44);
-                const bGeo = new THREE.CylinderGeometry(0.017, 0.017, 0.66, 6);
+                const bGeo = new THREE.CylinderGeometry(0.017, 0.017, 0.68, 8);
                 bGeo.rotateX(Math.PI / 2);
                 for (let i = 0; i < 6; i++) {
                     const ang = (i / 6) * Math.PI * 2;
-                    const b = new THREE.Mesh(bGeo, gunSteel);
+                    const b = new THREE.Mesh(bGeo, warmSteel);
                     b.position.set(Math.cos(ang) * 0.058, Math.sin(ang) * 0.058, 0);
                     this.minigunBarrelCluster.add(b);
                 }
-                const clamp = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.055, 12), darkAlloy);
-                clamp.rotation.x = Math.PI / 2; clamp.position.z = -0.2;
+                const clamp1 = new THREE.Mesh(new THREE.CylinderGeometry(0.086, 0.086, 0.055, 14), darkAlloy);
+                clamp1.rotation.x = Math.PI / 2; clamp1.position.z = -0.16;
+                const clamp2 = clamp1.clone();
+                clamp2.position.z = -0.32;
                 this.minigunHeatGlow = new THREE.Mesh(
-                    new THREE.CylinderGeometry(0.072, 0.072, 0.26, 12),
-                    new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.05 })
+                    new THREE.CylinderGeometry(0.044, 0.044, 0.45, 10),
+                    new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.12 })
                 );
                 this.minigunHeatGlow.rotation.x = Math.PI / 2; this.minigunHeatGlow.position.z = -0.18;
-                this.minigunBarrelCluster.add(clamp, this.minigunHeatGlow);
-                const accent = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.035, 0.28), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
-                accent.position.set(0, 0.055, -0.04);
-                g.add(body, drum, this.minigunBarrelCluster, accent);
+                this.minigunBarrelCluster.add(clamp1, clamp2, this.minigunHeatGlow);
+                addMesh(g, new THREE.BoxGeometry(0.23, 0.032, 0.28), em, 0, 0.055, -0.04);
+                g.add(this.minigunBarrelCluster);
             }
 
-            // 3: polymer_beam ("ГЕЛИОС-П") — Polymer-Powered Disintegrator!
+            // 3: polymer_beam ("ГЕЛИОС-П") — Polymer-Powered Sphere Cannon!
             {
-                const g = makeWeaponGroup('polymer_beam');
-                const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.56), darkAlloy);
-                // Twin glowing cyan-emerald polymer tubes along sides
+                const g = makeWeaponGroup();
                 const tubeMat = new THREE.MeshBasicMaterial({ color: 0x34d399 });
+                const cyanMat = new THREE.MeshBasicMaterial({ color: 0x67e8f9 });
+                addMesh(g, new THREE.BoxGeometry(0.16, 0.16, 0.56), darkAlloy, 0, 0, 0);
+                addMesh(g, new THREE.BoxGeometry(0.18, 0.05, 0.36), gunSteel, 0, 0.09, -0.14); // upper stabilizer bridge
                 [-0.088, 0.088].forEach(tx => {
-                    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.48, 10), tubeMat);
-                    tube.rotation.x = Math.PI / 2;
-                    tube.position.set(tx, 0.02, -0.24);
-                    g.add(tube);
+                    addMesh(g, new THREE.CylinderGeometry(0.022, 0.022, 0.48, 10), tubeMat, tx, 0.02, -0.24, Math.PI / 2);
+                    addMesh(g, new THREE.BoxGeometry(0.026, 0.072, 0.38), warmSteel, tx * 0.72, 0.02, -0.45);
                 });
-                const prongL = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.07, 0.36), gunSteel);
-                const prongR = prongL.clone();
-                prongL.position.set(-0.06, 0.02, -0.45);
-                prongR.position.set( 0.06, 0.02, -0.45);
-                this.polyCoreOrb = new THREE.Mesh(new THREE.OctahedronGeometry(0.048, 1), new THREE.MeshBasicMaterial({ color: 0x67e8f9 }));
-                this.polyCoreOrb.position.set(0, 0.02, -0.62);
+                addMesh(g, new THREE.BoxGeometry(0.07, 0.022, 0.32), cyanMat, 0, 0.098, -0.42);
+                this.polyCoreOrb = addMesh(g, new THREE.OctahedronGeometry(0.048, 1), cyanMat, 0, 0.02, -0.62);
                 this.polyRings = [];
-                for (let i = 0; i < 2; i++) {
-                    const pr = new THREE.Mesh(new THREE.TorusGeometry(0.082 - i * 0.014, 0.012, 8, 20), tubeMat);
-                    pr.position.set(0, 0.02, -0.42 - i * 0.14);
-                    g.add(pr);
+                for (let i = 0; i < 3; i++) {
+                    const pr = addMesh(g, new THREE.TorusGeometry(0.086 - i * 0.012, 0.011, 8, 22), i === 1 ? cyanMat : tubeMat, 0, 0.02, -0.36 - i * 0.13);
                     this.polyRings.push(pr);
                 }
-                g.add(body, prongL, prongR, this.polyCoreOrb);
             }
 
-            // 4: nova
+            // 4: nova ("ПУШКА СУПЕРНОВА")
             {
-                const g = makeWeaponGroup('nova');
-                const body = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.54), darkAlloy);
-                const r1 = new THREE.Mesh(new THREE.TorusGeometry(0.098, 0.018, 8, 18), gunSteel);
-                r1.position.set(0, 0.02, -0.32);
-                const r2 = r1.clone(); r2.position.set(0, 0.02, -0.5);
-                this.chargeOrbMesh = new THREE.Mesh(new THREE.SphereGeometry(0.042, 12, 12), new THREE.MeshBasicMaterial({ color: 0x34d399 }));
-                this.chargeOrbMesh.position.set(0, 0.02, -0.58);
+                const g = makeWeaponGroup();
+                const em = new THREE.MeshBasicMaterial({ color: 0x22c55e });
+                addMesh(g, new THREE.BoxGeometry(0.18, 0.17, 0.52), darkAlloy, 0, 0, 0);
+                addMesh(g, new THREE.CylinderGeometry(0.036, 0.036, 0.28, 10), warmSteel, -0.105, -0.01, -0.12, Math.PI / 2); // left cap bottle
+                addMesh(g, new THREE.CylinderGeometry(0.036, 0.036, 0.28, 10), warmSteel, 0.105, -0.01, -0.12, Math.PI / 2);  // right cap bottle
+                addMesh(g, new THREE.TorusGeometry(0.098, 0.018, 8, 18), gunSteel, 0, 0.02, -0.32);
+                addMesh(g, new THREE.TorusGeometry(0.092, 0.016, 8, 18), gunSteel, 0, 0.02, -0.49);
+                this.chargeOrbMesh = addMesh(g, new THREE.SphereGeometry(0.044, 12, 12), new THREE.MeshBasicMaterial({ color: 0x34d399 }), 0, 0.02, -0.58);
                 this.chargeFins = [];
-                for (let i = 0; i < 3; i++) {
-                    const ang = (i / 3) * Math.PI * 2;
-                    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.07, 0.22), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
-                    fin.position.set(Math.cos(ang) * 0.1, Math.sin(ang) * 0.1 + 0.02, -0.46);
-                    fin.rotation.z = ang;
-                    g.add(fin);
+                for (let i = 0; i < 4; i++) {
+                    const ang = (i / 4) * Math.PI * 2;
+                    const fin = addMesh(g, new THREE.BoxGeometry(0.022, 0.068, 0.22), em, Math.cos(ang) * 0.1, Math.sin(ang) * 0.1 + 0.02, -0.46, 0, 0, ang);
                     this.chargeFins.push({ mesh: fin, angle: ang });
                 }
-                g.add(body, r1, r2, this.chargeOrbMesh);
             }
 
-            // 5: smg ("ШЕРШЕНЬ-VX")
+            // 5: smg ("ПП ШЕРШЕНЬ-VX")
             {
-                const g = makeWeaponGroup('smg');
-                const body = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.125, 0.42), darkAlloy);
-                const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.022, 0.28, 10), gunSteel);
-                barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.02, -0.28);
-                const mag = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.24, 0.065), gunSteel);
-                mag.position.set(0, -0.15, -0.05); mag.rotation.x = -0.22;
-                const glow = new THREE.Mesh(new THREE.BoxGeometry(0.102, 0.024, 0.28), new THREE.MeshBasicMaterial({ color: 0x86efac }));
-                glow.position.set(0, 0.042, -0.06);
-                g.add(body, barrel, mag, glow);
+                const g = makeWeaponGroup();
+                const em = new THREE.MeshBasicMaterial({ color: 0x86efac });
+                addMesh(g, new THREE.BoxGeometry(0.095, 0.12, 0.42), darkAlloy, 0, 0, 0.02);
+                addMesh(g, new THREE.BoxGeometry(0.082, 0.05, 0.34), gunSteel, 0, 0.055, -0.08);
+                addMesh(g, new THREE.CylinderGeometry(0.02, 0.022, 0.3, 10), warmSteel, 0, 0.022, -0.28, Math.PI / 2);
+                addMesh(g, new THREE.CylinderGeometry(0.032, 0.022, 0.07, 10), darkAlloy, 0, 0.022, -0.44, Math.PI / 2); // compensator
+                addMesh(g, new THREE.BoxGeometry(0.038, 0.1, 0.044), darkAlloy, 0, -0.09, -0.22, -0.15); // angled vertical grip
+                const mag = addMesh(g, new THREE.BoxGeometry(0.042, 0.24, 0.064), gunSteel, 0, -0.15, -0.05, -0.22);
                 this.weaponMags[5] = mag;
+                addMesh(g, new THREE.BoxGeometry(0.102, 0.022, 0.28), em, 0, 0.044, -0.06);
+                addMesh(g, new THREE.BoxGeometry(0.046, 0.025, 0.18), em, 0, 0.09, -0.04);
             }
 
-            // 6: flamer
+            // 6: flamer ("ОГНЕМЁТ ИНФЕРНО")
             {
-                const g = makeWeaponGroup('flamer');
-                const body = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.15, 0.52), darkAlloy);
-                const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.072, 0.36, 12), new THREE.MeshStandardMaterial({ color: 0xb91c1c, metalness: 0.55, roughness: 0.35 }));
-                tank.rotation.x = Math.PI / 2; tank.position.set(0, -0.12, -0.08);
+                const g = makeWeaponGroup();
+                const em = new THREE.MeshBasicMaterial({ color: 0xff6b2b });
+                addMesh(g, new THREE.BoxGeometry(0.14, 0.15, 0.52), darkAlloy, 0, 0, 0);
+                const tank = addMesh(g, new THREE.CylinderGeometry(0.072, 0.072, 0.36, 12), new THREE.MeshStandardMaterial({ color: 0xb91c1c, metalness: 0.58, roughness: 0.32 }), 0, -0.12, -0.08, Math.PI / 2);
                 this.weaponMags[6] = tank;
-                const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.034, 0.4, 10), gunSteel);
-                nozzle.rotation.x = Math.PI / 2; nozzle.position.set(0, 0.02, -0.42);
-                this.flamerPilot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff6b2b }));
-                this.flamerPilot.position.set(0, -0.01, -0.63);
-                g.add(body, tank, nozzle, this.flamerPilot);
+                addMesh(g, new THREE.CylinderGeometry(0.022, 0.022, 0.14, 8), warmSteel, -0.06, -0.05, -0.22, 0.4, 0, 0.2); // fuel hose
+                addMesh(g, new THREE.CylinderGeometry(0.052, 0.036, 0.42, 12), gunSteel, 0, 0.02, -0.42, Math.PI / 2);
+                addMesh(g, new THREE.CylinderGeometry(0.065, 0.065, 0.22, 12), bronzeTrim, 0, 0.02, -0.36, Math.PI / 2); // heat shroud jacket
+                addMesh(g, new THREE.BoxGeometry(0.02, 0.02, 0.14), warmSteel, 0.035, -0.015, -0.56); // igniter prong
+                this.flamerPilot = addMesh(g, new THREE.ConeGeometry(0.036, 0.09, 8), em, 0, -0.01, -0.64, Math.PI / 2);
             }
 
-            // 7: railgun
+            // 7: railgun ("РЕЛЬСОТРОН ГИПЕРИОН")
             {
-                const g = makeWeaponGroup('railgun');
-                const body = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.16, 0.58), darkAlloy);
-                const railL = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.054, 0.58), gunSteel);
-                const railR = railL.clone();
-                railL.position.set(-0.048, 0.03, -0.47);
-                railR.position.set( 0.048, 0.03, -0.47);
-                const core = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.019, 0.56, 8), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-                core.rotation.x = Math.PI / 2; core.position.set(0, 0.03, -0.45);
+                const g = makeWeaponGroup();
+                const cy = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+                const hiCy = new THREE.MeshBasicMaterial({ color: 0x7dd3fc });
+                addMesh(g, new THREE.BoxGeometry(0.135, 0.165, 0.56), darkAlloy, 0, 0, 0);
+                addMesh(g, new THREE.BoxGeometry(0.028, 0.056, 0.62), warmSteel, -0.05, 0.03, -0.47);
+                addMesh(g, new THREE.BoxGeometry(0.028, 0.056, 0.62), warmSteel, 0.05, 0.03, -0.47);
+                addMesh(g, new THREE.CylinderGeometry(0.02, 0.02, 0.6, 8), cy, 0, 0.03, -0.46, Math.PI / 2);
+                addMesh(g, new THREE.BoxGeometry(0.11, 0.03, 0.06), gunSteel, 0, 0.065, -0.58); // forward rail bridge
                 this.railCaps = [];
-                for (let i = 0; i < 3; i++) {
-                    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.06, 0.05), new THREE.MeshBasicMaterial({ color: 0x7dd3fc }));
-                    cap.position.set(0.072, 0.03, -0.18 - i * 0.09);
-                    g.add(cap);
+                for (let i = 0; i < 4; i++) {
+                    const cap = addMesh(g, new THREE.BoxGeometry(0.02, 0.062, 0.044), hiCy, 0.076, 0.03, -0.14 - i * 0.08);
                     this.railCaps.push(cap);
                 }
-                g.add(body, railL, railR, core);
             }
 
-            // 8: tesla
+            // 8: tesla ("ТЕСЛА-ДУГА ЗЕВС")
             {
-                const g = makeWeaponGroup('tesla');
-                const body = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 0.5), darkAlloy);
+                const g = makeWeaponGroup();
                 const tCoilMat = new THREE.MeshBasicMaterial({ color: 0x6ee7b7 });
-                for (let i = 0; i < 3; i++) {
-                    const coil = new THREE.Mesh(new THREE.TorusGeometry(0.07 - i * 0.008, 0.014, 8, 16), tCoilMat);
-                    coil.position.set(0, 0.02, -0.26 - i * 0.11);
-                    g.add(coil);
+                addMesh(g, new THREE.BoxGeometry(0.14, 0.16, 0.5), darkAlloy, 0, 0, 0);
+                addMesh(g, new THREE.CylinderGeometry(0.026, 0.026, 0.24, 8), bronzeTrim, -0.078, 0.01, -0.1, Math.PI / 2);
+                addMesh(g, new THREE.CylinderGeometry(0.026, 0.026, 0.24, 8), bronzeTrim, 0.078, 0.01, -0.1, Math.PI / 2);
+                for (let i = 0; i < 4; i++) {
+                    addMesh(g, new THREE.TorusGeometry(0.072 - i * 0.007, 0.013, 8, 18), i % 2 === 0 ? tCoilMat : bronzeTrim, 0, 0.02, -0.22 - i * 0.095);
                 }
-                const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.5, 8), gunSteel);
-                rod.rotation.x = Math.PI / 2; rod.position.set(0, 0.02, -0.39);
-                this.teslaTip = new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0), tCoilMat);
-                this.teslaTip.position.set(0, 0.02, -0.65);
-                g.add(body, rod, this.teslaTip);
+                addMesh(g, new THREE.CylinderGeometry(0.022, 0.022, 0.52, 8), warmSteel, 0, 0.02, -0.39, Math.PI / 2);
+                this.teslaTip = addMesh(g, new THREE.OctahedronGeometry(0.062, 0), tCoilMat, 0, 0.02, -0.66);
             }
 
-            // 9: cryo_launcher ("МЕТЕЛЬ")
+            // 9: cryo_launcher ("КРИО-МИНОМЁТ МЕТЕЛЬ")
             {
-                const g = makeWeaponGroup('cryo_launcher');
-                const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.44), darkAlloy);
-                this.cryoDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.22, 10), new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.65, roughness: 0.3 }));
-                this.cryoDrum.rotation.x = Math.PI / 2; this.cryoDrum.position.set(0, 0.01, -0.16);
-                const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.072, 0.38, 12), gunSteel);
-                barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.03, -0.42);
-                const iceRing = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.012, 6, 16), new THREE.MeshBasicMaterial({ color: 0x67e8f9 }));
-                iceRing.position.set(0, 0.03, -0.59);
-                g.add(body, this.cryoDrum, barrel, iceRing);
+                const g = makeWeaponGroup();
+                const iceMat = new THREE.MeshBasicMaterial({ color: 0x67e8f9 });
+                addMesh(g, new THREE.BoxGeometry(0.16, 0.16, 0.44), darkAlloy, 0, 0, 0);
+                this.cryoDrum = addMesh(g, new THREE.CylinderGeometry(0.11, 0.11, 0.22, 12), new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.68, roughness: 0.28 }), 0, 0.01, -0.16, Math.PI / 2);
                 this.weaponMags[9] = this.cryoDrum;
+                addMesh(g, new THREE.CylinderGeometry(0.068, 0.072, 0.4, 12), warmSteel, 0, 0.03, -0.43, Math.PI / 2);
+                addMesh(g, new THREE.CylinderGeometry(0.024, 0.024, 0.26, 8), iceMat, -0.078, 0.02, -0.36, Math.PI / 2); // cryo tank L
+                addMesh(g, new THREE.CylinderGeometry(0.024, 0.024, 0.26, 8), iceMat, 0.078, 0.02, -0.36, Math.PI / 2);  // cryo tank R
+                addMesh(g, new THREE.TorusGeometry(0.076, 0.013, 6, 16), iceMat, 0, 0.03, -0.6);
+                addMesh(g, new THREE.TorusGeometry(0.08, 0.012, 6, 16), gunSteel, 0, 0.03, -0.48);
             }
 
-            // 10: hydra ("ГИДРА-3")
+            // 10: hydra ("РАКЕТНИЦА ГИДРА-3")
             {
-                const g = makeWeaponGroup('hydra');
-                const box = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.17, 0.56), darkAlloy);
-                box.position.set(0, 0.02, -0.15);
-                const trim = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.03, 0.44), new THREE.MeshBasicMaterial({ color: 0xf43f5e }));
-                trim.position.set(0, 0.1, -0.15);
-                g.add(box, trim);
+                const g = makeWeaponGroup();
+                const roseMat = new THREE.MeshBasicMaterial({ color: 0xf43f5e });
+                const warheadMat = new THREE.MeshBasicMaterial({ color: 0xfb7185 });
+                addMesh(g, new THREE.BoxGeometry(0.24, 0.17, 0.56), darkAlloy, 0, 0.02, -0.15);
+                addMesh(g, new THREE.BoxGeometry(0.26, 0.035, 0.46), roseMat, 0, 0.106, -0.15);
+                addMesh(g, new THREE.BoxGeometry(0.065, 0.06, 0.12), gunSteel, 0.09, 0.135, -0.08); // lock-on sensor pod
+                addMesh(g, new THREE.CylinderGeometry(0.018, 0.018, 0.04, 8), warheadMat, 0.09, 0.135, -0.15, Math.PI / 2); // lens
                 this.hydraPorts = [];
                 [-0.068, 0, 0.068].forEach(px => {
-                    const port = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.06, 10), new THREE.MeshBasicMaterial({ color: 0xfb7185 }));
-                    port.rotation.x = Math.PI / 2;
-                    port.position.set(px, 0.02, -0.44);
-                    g.add(port);
-                    this.hydraPorts.push(port);
+                    addMesh(g, new THREE.CylinderGeometry(0.034, 0.034, 0.12, 10), warmSteel, px, 0.02, -0.43, Math.PI / 2);
+                    const nose = addMesh(g, new THREE.ConeGeometry(0.025, 0.06, 8), warheadMat, px, 0.02, -0.5, -Math.PI / 2);
+                    this.hydraPorts.push(nose);
                 });
             }
 
-            // 11: vulcan_gatling ("КРАФТОВЫЙ ГАТЛИНГ M6-БУРЯ")
+            // 11: vulcan_gatling ("ГАТЛИНГ БУРЯ-M6")
             {
-                const g = makeWeaponGroup('vulcan_gatling');
-                const body = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 0.5), darkAlloy);
-                body.position.set(0, -0.04, 0.02);
-                const shieldPlate = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.22, 0.04), gunSteel);
-                shieldPlate.position.set(0, 0.06, -0.2);
-                const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.28, 14), new THREE.MeshStandardMaterial({ color: 0x9a3412, metalness: 0.72, roughness: 0.3 }));
-                drum.rotation.z = Math.PI / 2;
-                drum.position.set(-0.14, -0.16, -0.04);
+                const g = makeWeaponGroup();
+                const orMat = new THREE.MeshBasicMaterial({ color: 0xf97316 });
+                addMesh(g, new THREE.BoxGeometry(0.24, 0.24, 0.5), darkAlloy, 0, -0.04, 0.02);
+                addMesh(g, new THREE.BoxGeometry(0.32, 0.22, 0.04), gunSteel, 0, 0.06, -0.2); // armored gun shield
+                const drum = addMesh(g, new THREE.CylinderGeometry(0.13, 0.13, 0.28, 14), bronzeTrim, -0.14, -0.16, -0.04, 0, 0, Math.PI / 2);
                 this.weaponMags[11] = drum;
+                addMesh(g, new THREE.BoxGeometry(0.06, 0.12, 0.18), warmSteel, -0.09, -0.09, -0.04, 0, 0, 0.3); // feed chute
 
                 this.vulcanBarrelCluster = new THREE.Group();
                 this.vulcanBarrelCluster.position.set(0, -0.02, -0.5);
@@ -313,42 +320,60 @@
                 vbGeo.rotateX(Math.PI / 2);
                 for (let i = 0; i < 6; i++) {
                     const ang = (i / 6) * Math.PI * 2;
-                    const bar = new THREE.Mesh(vbGeo, gunSteel);
+                    const bar = new THREE.Mesh(vbGeo, warmSteel);
                     bar.position.set(Math.cos(ang) * 0.068, Math.sin(ang) * 0.068, 0);
                     this.vulcanBarrelCluster.add(bar);
                 }
-                const muzzleRing = new THREE.Mesh(new THREE.TorusGeometry(0.088, 0.016, 6, 16), new THREE.MeshBasicMaterial({ color: 0xf97316 }));
+                const midCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.092, 0.092, 0.06, 14), darkAlloy);
+                midCollar.rotation.x = Math.PI / 2; midCollar.position.z = -0.14;
+                const muzzleRing = new THREE.Mesh(new THREE.TorusGeometry(0.088, 0.016, 6, 16), orMat);
                 muzzleRing.position.z = -0.34;
-                this.vulcanBarrelCluster.add(muzzleRing);
-                const topRail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 0.36), new THREE.MeshBasicMaterial({ color: 0xf97316 }));
-                topRail.position.set(0, 0.09, -0.05);
-                g.add(body, shieldPlate, drum, this.vulcanBarrelCluster, topRail);
+                this.vulcanBarrelCluster.add(midCollar, muzzleRing);
+                addMesh(g, new THREE.BoxGeometry(0.18, 0.04, 0.36), orMat, 0, 0.09, -0.05);
+                g.add(this.vulcanBarrelCluster);
             }
 
-            // Build Dynamic Visible 3D Attachment Sub-Meshes for EACH Weapon!
-            const attAlloy = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.22 });
+            // Build Dynamic Visible 3D Attachment Sub-Meshes for EACH Weapon
+            const attAlloy = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.2 });
             const attGlow = new THREE.MeshBasicMaterial({ color: 0x67e8f9 });
             const attFire = new THREE.MeshBasicMaterial({ color: 0xf97316 });
             this.weaponMeshes.forEach((wg, idx) => {
-                const barrelMod = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.042, 0.19, 10), attAlloy);
-                barrelMod.rotation.x = Math.PI / 2;
+                const barrelMod = new THREE.Group();
+                const supMain = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.04, 0.21, 10), attAlloy);
+                supMain.rotation.x = Math.PI / 2;
+                const supRing = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.006, 6, 12), attGlow);
+                supRing.position.z = -0.07;
+                barrelMod.add(supMain, supRing);
                 barrelMod.position.set(0, 0.025, -0.68);
                 barrelMod.visible = false;
 
-                const magMod = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.14, 10), attGlow);
-                magMod.rotation.z = Math.PI / 2;
+                const magMod = new THREE.Group();
+                const extDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.066, 0.066, 0.14, 12), attAlloy);
+                extDrum.rotation.z = Math.PI / 2;
+                const extBand = new THREE.Mesh(new THREE.CylinderGeometry(0.069, 0.069, 0.04, 12), attGlow);
+                extBand.rotation.z = Math.PI / 2;
+                magMod.add(extDrum, extBand);
                 magMod.position.set(0, -0.14, -0.12);
                 magMod.visible = false;
 
                 const opticMod = new THREE.Group();
-                const frame = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.055, 0.12), attAlloy);
-                const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.052, 0.042), opticMat);
-                glass.position.y = 0.01;
-                opticMod.add(frame, glass);
-                opticMod.position.set(0, 0.12, -0.06);
+                const frameBase = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.028, 0.12), attAlloy);
+                const archL = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.055, 0.03), attAlloy);
+                archL.position.set(-0.03, 0.038, 0);
+                const archR = archL.clone();
+                archR.position.x = 0.03;
+                const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.052, 0.044), opticMat);
+                glass.position.y = 0.038;
+                const retDot = new THREE.Mesh(new THREE.OctahedronGeometry(0.007, 0), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
+                retDot.position.set(0, 0.038, -0.002);
+                opticMod.add(frameBase, archL, archR, glass, retDot);
+                opticMod.position.set(0, 0.115, -0.06);
                 opticMod.visible = false;
 
-                const coreMod = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.052, 0.2), attFire);
+                const coreMod = new THREE.Group();
+                const coilBody = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.052, 0.2), attAlloy);
+                const coilFin = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.022, 0.16), attFire);
+                coreMod.add(coilBody, coilFin);
                 coreMod.position.set(0, -0.06, -0.34);
                 coreMod.visible = false;
 
@@ -380,16 +405,31 @@
         }
 
         _buildPolymerGlove() {
-            const cuffMat = new THREE.MeshStandardMaterial({ color: 0x0f221b, metalness: 0.82, roughness: 0.25 });
-            const plateMat = new THREE.MeshStandardMaterial({ color: 0x264438, metalness: 0.72, roughness: 0.32 });
+            const cuffMat = new THREE.MeshStandardMaterial({ color: 0x0f221b, metalness: 0.84, roughness: 0.24 });
+            const plateMat = new THREE.MeshStandardMaterial({ color: 0x264438, metalness: 0.74, roughness: 0.3 });
+            const knuckleMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.88, roughness: 0.22 });
             this.gloveVeinsMat = new THREE.MeshBasicMaterial({ color: 0x34d399 });
 
-            const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.076, 0.38, 10), cuffMat);
+            const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.064, 0.078, 0.38, 12), cuffMat);
             forearm.rotation.x = Math.PI / 2.2;
             forearm.position.set(-0.03, -0.08, 0.18);
             this.gloveHolder.add(forearm);
 
-            const palm = new THREE.Mesh(new THREE.BoxGeometry(0.115, 0.055, 0.14), plateMat);
+            const wristCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.074, 0.065, 12), knuckleMat);
+            wristCollar.rotation.x = Math.PI / 2.2;
+            wristCollar.position.set(-0.015, -0.04, 0.06);
+            this.gloveHolder.add(wristCollar);
+
+            // Live Forearm Polymer Gauge
+            const gaugeFrame = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.02, 0.16), cuffMat);
+            gaugeFrame.position.set(-0.045, 0.032, 0.11);
+            gaugeFrame.rotation.z = -0.22;
+            this.polymerGaugeFill = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.022, 0.14), this.gloveVeinsMat);
+            this.polymerGaugeFill.position.set(-0.045, 0.034, 0.11);
+            this.polymerGaugeFill.rotation.z = -0.22;
+            this.gloveHolder.add(gaugeFrame, this.polymerGaugeFill);
+
+            const palm = new THREE.Mesh(new THREE.BoxGeometry(0.118, 0.055, 0.145), plateMat);
             palm.position.set(0, 0, -0.02);
             palm.rotation.z = -0.22;
             this.gloveHolder.add(palm);
@@ -416,11 +456,12 @@
                 const pivot = new THREE.Group();
                 pivot.position.set(f.x, f.y, f.z);
                 pivot.rotation.z = f.rotZ;
-                const seg1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.022, f.len), plateMat);
-                seg1.position.z = -f.len * 0.45;
+                const knuckle = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.026, 0.024), knuckleMat);
+                const seg1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.022, f.len * 0.68), plateMat);
+                seg1.position.z = -f.len * 0.36;
                 const tip = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.018, f.len * 0.45), this.gloveVeinsMat);
-                tip.position.z = -f.len * 0.95;
-                pivot.add(seg1, tip);
+                tip.position.z = -f.len * 0.9;
+                pivot.add(knuckle, seg1, tip);
                 this.gloveHolder.add(pivot);
                 this.gloveFingers.push(pivot);
             });
@@ -430,10 +471,9 @@
             this.weaponMeshes.forEach((m, i) => {
                 m.visible = (i === weaponIndex);
             });
-            this.syncWeaponAttachments(weaponIdxSafe(weaponIndex), equippedAttachments);
+            const safeIdx = Math.max(0, Math.min(weaponIndex, 11));
+            this.syncWeaponAttachments(safeIdx, equippedAttachments);
             this.drawProgress = 0;
-
-            function weaponIdxSafe(idx) { return Math.max(0, Math.min(idx, 11)); }
         }
 
         onWeaponFire(weaponIndex, weaponCfg, recoilMult = 1.0) {
@@ -485,6 +525,7 @@
                 isCharging,
                 chargeRatio,
                 chargeSeconds = 0,
+                polymerRatio = 1,
                 bobTime,
                 slideTimer,
                 wheelOpen,
@@ -523,7 +564,7 @@
             }
             if (this.shotgunPumpAnim > 0) {
                 this.shotgunPumpAnim = Math.max(0, this.shotgunPumpAnim - dt * 2.8);
-                this.shotgunPump.position.z = -0.28 + Math.sin(this.shotgunPumpAnim * Math.PI) * 0.11;
+                this.shotgunPump.position.z = -0.29 + Math.sin(this.shotgunPumpAnim * Math.PI) * 0.11;
             }
             if (this.minigunBarrelCluster || this.vulcanBarrelCluster) {
                 if (this.minigunSpin > 0) {
@@ -533,7 +574,7 @@
                 }
                 this.minigunHeat = Math.max(0, this.minigunHeat - dt * 0.25);
                 if (this.minigunHeatGlow) {
-                    this.minigunHeatGlow.material.opacity = 0.05 + this.minigunHeat * 0.55;
+                    this.minigunHeatGlow.material.opacity = 0.1 + this.minigunHeat * 0.65;
                 }
             }
             if (this.polyCoreOrb && curWeapon.id === 'polymer_beam') {
@@ -542,7 +583,7 @@
                 this.polyCoreOrb.rotation.y += dt * (isCharging ? (10 + chargeSeconds * 4) : 2.5);
                 this.polyCoreOrb.material.color.setHex(chargeSeconds > 3.0 ? 0xfacc15 : (chargeSeconds > 1.2 ? 0x67e8f9 : 0x34d399));
                 this.polyRings.forEach((pr, idx) => {
-                    pr.rotation.z += dt * (isCharging ? (10 + Math.min(30, chargeSeconds * 8)) : 2.0) * (idx === 0 ? 1 : -1);
+                    pr.rotation.z += dt * (isCharging ? (10 + Math.min(30, chargeSeconds * 8)) : 2.0) * (idx % 2 === 0 ? 1 : -1);
                 });
             }
             if (this.flamerPilot) {
@@ -563,7 +604,7 @@
             }
             if (this.railCaps.length > 0 && curWeapon.id === 'railgun') {
                 this.railCaps.forEach((cap, idx) => {
-                    cap.material.color.setHex((Math.floor(tNow * 2 + idx) % 3 === 0) ? 0x4ade80 : 0x38bdf8);
+                    cap.material.color.setHex((Math.floor(tNow * 2.4 + idx) % 4 === 0) ? 0x4ade80 : 0x38bdf8);
                 });
             }
 
@@ -572,7 +613,11 @@
                 if (this.muzzleLight.intensity < 1.2) this.muzzleFlash.visible = false;
             }
 
-            // Left-Hand Polymer Glove animation
+            // Left-Hand Polymer Glove + Live Wrist Gauge
+            if (this.polymerGaugeFill) {
+                const pr = Math.max(0.06, Math.min(1, polymerRatio));
+                this.polymerGaugeFill.scale.set(1, 1, pr);
+            }
             this.gloveCore.rotation.y += dt * (wheelOpen || buildMode ? 6.0 : 2.2);
             this.gloveHoloRing.rotation.z -= dt * (wheelOpen || buildMode ? 5.0 : 1.8);
 

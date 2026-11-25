@@ -1046,7 +1046,7 @@
                     this.enemiesToSpawn.push('brute');
                 } else if (waveNum >= 4 && r < 0.14) {
                     this.enemiesToSpawn.push('brute');
-                } else if (r < 0.28) {
+                } else if (r < (waveNum === 1 ? 0.18 : 0.28)) {
                     this.enemiesToSpawn.push('shieldbearer');
                 } else if (waveNum >= 2 && r < 0.42) {
                     this.enemiesToSpawn.push('sniper');
@@ -1379,6 +1379,7 @@
                 isCharging: this.isCharging,
                 chargeRatio,
                 chargeSeconds: this.chargeTime,
+                polymerRatio: this.combat.polymerEnergy / Math.max(1, this.combat.maxPolymerEnergy),
                 bobTime: this.player.bobTime,
                 slideTimer: this.player.slideTimer,
                 wheelOpen: this.ui.wheelOpen,

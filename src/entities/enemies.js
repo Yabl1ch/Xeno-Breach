@@ -48,6 +48,7 @@
             const base = XB.ENEMY_TYPES[type] || XB.ENEMY_TYPES.scout;
             const hp = Math.round(base.hpBase + waveNum * base.hpPerWave);
             const speed = base.speed + Math.min(waveNum * 0.25, base.speedMaxBonus);
+            const scaledDamage = Math.round(base.damage * (1 + Math.min(1.6, Math.max(0, waveNum - 1) * 0.085)));
 
             const group = new THREE.Group();
             const hipPivot = new THREE.Group();
@@ -139,8 +140,9 @@
             spinePack.userData.hitPart = 'body';
             torsoPivot.add(spinePack);
 
+            let backTurbine = null;
             if (type === 'brute' || type === 'overlord') {
-                // Heavy Twin Industrial Exhaust Stacks!
+                // Heavy Twin Industrial Exhaust Stacks + Rotating Dorsal Turbine!
                 [-0.36, 0.36].forEach(ex => {
                     const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.11, 0.68, 8), servoMat);
                     stack.position.set(ex, 1.06, -0.36);
@@ -150,6 +152,11 @@
                     cap.rotation.x = -0.25;
                     torsoPivot.add(stack, cap);
                 });
+                const turbCowling = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.045, 6, 16), armorMat);
+                turbCowling.position.set(0, 0.62, -0.5);
+                backTurbine = new THREE.Mesh(new THREE.OctahedronGeometry(0.18, 0), eyeMat);
+                backTurbine.position.set(0, 0.62, -0.5);
+                torsoPivot.add(turbCowling, backTurbine);
             }
 
             if (type === 'grenadier') {
@@ -306,20 +313,30 @@
                     const gunTip = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), eyeMat);
                     gunTip.position.set(0, -0.66, 0.54 + barrelLen / 2);
                     armPivot.add(gun, coils, gunTip);
+                    if (type === 'sniper') {
+                        const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.048, 0.42, 8), servoMat);
+                        scope.rotation.x = Math.PI / 2;
+                        scope.position.set(0, -0.52, 0.52);
+                        armPivot.add(scope);
+                    }
                 } else if (side === -1 && type === 'shieldbearer') {
-                    const shFrame = new THREE.Mesh(new THREE.BoxGeometry(1.08, 1.72, 0.12), armorMat);
+                    const shFrame = new THREE.Mesh(new THREE.BoxGeometry(1.12, 1.76, 0.12), armorMat);
                     shFrame.position.set(0.18, -0.55, 0.52);
                     const shEnergy = new THREE.Mesh(
-                        new THREE.BoxGeometry(0.94, 1.54, 0.14),
+                        new THREE.BoxGeometry(0.96, 1.54, 0.14),
                         new THREE.MeshBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.58 })
                     );
                     shEnergy.position.copy(shFrame.position);
-                    const shBar = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.16, 0.16), eyeMat);
+                    const shBar = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.16, 0.16), eyeMat);
                     shBar.position.set(0.18, -0.35, 0.54);
+                    const shEmitterTop = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.16, 0.18), servoMat);
+                    shEmitterTop.position.set(0.18, 0.34, 0.54);
+                    const shEmitterBot = shEmitterTop.clone();
+                    shEmitterBot.position.y = -1.42;
                     shEnergy.userData.isEnemyShield = true;
                     shFrame.userData.isEnemyShield = true;
                     shBar.userData.isEnemyShield = true;
-                    armPivot.add(shFrame, shEnergy, shBar);
+                    armPivot.add(shFrame, shEnergy, shBar, shEmitterTop, shEmitterBot);
                 } else if (type === 'brute' || (type === 'overlord' && side === 1)) {
                     const fist = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.38, 0.42), armorMat);
                     fist.position.set(0, -0.82, 0.32);
@@ -393,11 +410,15 @@
             group.add(iceShell);
 
             let bossRing = null;
+            let bossOuterRing = null;
             if (base.isBoss) {
                 bossRing = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.06, 8, 24), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
                 bossRing.position.y = 1.5;
                 bossRing.rotation.x = Math.PI / 2.2;
-                group.add(bossRing);
+                bossOuterRing = new THREE.Mesh(new THREE.TorusGeometry(1.42, 0.045, 6, 24), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
+                bossOuterRing.position.y = 1.5;
+                bossOuterRing.rotation.x = -Math.PI / 2.5;
+                group.add(bossRing, bossOuterRing);
             }
 
             // Visible Red Laser Sight Line for Sniper Robots ("ОСА")!
@@ -433,6 +454,8 @@
                 thrusterGlows,
                 iceShell,
                 bossRing,
+                bossOuterRing,
+                backTurbine,
                 laserLine,
                 skinMat,
                 hp,
@@ -440,7 +463,7 @@
                 speed,
                 score: base.score,
                 attackRange: base.attackRange,
-                damage: base.damage,
+                damage: scaledDamage,
                 radius: base.radius,
                 ranged: base.ranged,
                 strideFreq: base.strideFreq,
@@ -942,6 +965,8 @@
 
             a.headGroup.rotation.y = Math.sin(a.walkPhase * 0.5) * 0.08;
             a.coreGlow.rotation.y += dt * 3.0;
+            if (a.backTurbine) a.backTurbine.rotation.z += dt * 7.5;
+            if (a.bossOuterRing) a.bossOuterRing.rotation.z -= dt * 2.2;
         }
 
         _resolveAlienCollisions(pos, radius, enemyHeight = 2.4) {
