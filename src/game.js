@@ -88,9 +88,6 @@
                 : 4;
             this.map = new XB.MapBuilder(this.scene, maxAniso);
             this.map.build();
-            if (XB.Assets && typeof XB.Assets.preloadAll === 'function') {
-                XB.Assets.preloadAll();
-            }
 
             this.player = new XB.PlayerController(this.map, this.sound);
             this.vm = new XB.ViewModelRig(this.camera);
@@ -124,9 +121,9 @@
                 powerPreference: 'high-performance'
             });
             this.renderer.setSize(global.innerWidth, global.innerHeight);
-            this.renderer.setPixelRatio(Math.min(global.devicePixelRatio || 1, 2));
+            this.renderer.setPixelRatio(Math.min(global.devicePixelRatio || 1, 1.5));
             this.renderer.shadowMap.enabled = true;
-            this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            this.renderer.shadowMap.type = THREE.PCFShadowMap;
             if (typeof THREE.sRGBEncoding !== 'undefined') {
                 this.renderer.outputEncoding = THREE.sRGBEncoding;
             }
@@ -1437,12 +1434,13 @@
             if (this.waveState === 'COMBAT' && this.combat.timeStopTimer <= 0) {
                 if (this.waveSpawning) {
                     const spawnScale = this.combat.timeSlowTimer > 0 ? 0.25 : 1.0;
+                    const maxConcurrent = Math.min(24, 12 + this.wave);
                     this.spawnTimer -= dt * spawnScale;
-                    if (this.spawnTimer <= 0 && this.enemiesToSpawn.length > 0) {
+                    if (this.spawnTimer <= 0 && this.enemiesToSpawn.length > 0 && this.enemies.getAliveCount() < maxConcurrent) {
                         const doorIdx = this.activeDoorIndices[Math.floor(Math.random() * this.activeDoorIndices.length)];
                         const door = this.map.breachDoors[doorIdx];
                         this.enemies.spawnAlien(this.enemiesToSpawn.pop(), this.wave, door);
-                        this.spawnTimer = Math.max(0.32, 0.95 - this.wave * 0.05);
+                        this.spawnTimer = Math.max(0.28, 0.92 - this.wave * 0.05);
                         this.ui.syncHUD();
                     }
                     if (this.enemiesToSpawn.length === 0) this.waveSpawning = false;

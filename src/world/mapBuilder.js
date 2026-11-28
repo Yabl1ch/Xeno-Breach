@@ -143,15 +143,6 @@
                 metalness: 0.54
             });
 
-            if (XB.Assets && typeof XB.Assets.applyExternalPBRToMaterial === 'function') {
-                XB.Assets.applyExternalPBRToMaterial(floorMat, 'floor', 42, 42, { maxAniso: aniso, normalScale: 0.9, tintHex: 0xa4d9bc });
-                XB.Assets.applyExternalPBRToMaterial(wallMat, 'wall', 12, 1, { maxAniso: aniso, normalScale: 1.15, tintHex: 0x86c9a5 });
-                XB.Assets.applyExternalPBRToMaterial(structMat, 'struct', 2, 2, { maxAniso: aniso, normalScale: 1.0, tintHex: 0x72b091 });
-                XB.Assets.applyExternalPBRToMaterial(bunkerMat, 'bunker', 2, 2, { maxAniso: aniso, normalScale: 1.2, tintHex: 0x9ac2ab });
-                XB.Assets.applyExternalPBRToMaterial(darkSteelMat, 'floor', 3, 2, { maxAniso: aniso, normalScale: 0.85, tintHex: 0x456b58 });
-                XB.Assets.applyExternalPBRToMaterial(bridgeMat, 'grate', 6, 2, { maxAniso: aniso, normalScale: 1.0, tintHex: 0x88b89f });
-            }
-
             // Main floor
             const floor = new THREE.Mesh(new THREE.PlaneGeometry(196, 212), floorMat);
             floor.rotation.x = -Math.PI / 2;
@@ -997,15 +988,15 @@
         }
 
         _buildLightingAndSky() {
-            this.scene.add(new THREE.HemisphereLight(0x9be7c4, 0x0a1a14, 0.88));
+            this.scene.add(new THREE.HemisphereLight(0x9be7c4, 0x0a1a14, 0.98));
 
-            const dirLight = new THREE.DirectionalLight(0xdfffe8, 1.25);
+            const dirLight = new THREE.DirectionalLight(0xdfffe8, 1.32);
             dirLight.position.set(52, 84, 42);
             dirLight.castShadow = true;
-            dirLight.shadow.mapSize.width = 2048;
-            dirLight.shadow.mapSize.height = 2048;
-            dirLight.shadow.bias = -0.0004;
-            dirLight.shadow.normalBias = 0.035;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            dirLight.shadow.bias = -0.0005;
+            dirLight.shadow.normalBias = 0.04;
             dirLight.shadow.camera.near = 10;
             dirLight.shadow.camera.far = 250;
             const d = 108;
@@ -1016,20 +1007,16 @@
             this.scene.add(dirLight);
 
             // Cool opposing rim/fill directional light to define 3D silhouettes on shadow sides
-            const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.44);
+            const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.54);
             fillLight.position.set(-56, 38, -52);
             this.scene.add(fillLight);
 
-            // Balanced elevated sector lights (high placement + controlled intensity prevent floor whiteouts)
+            // Streamlined 4-sector point light rig (cuts Forward PBR shader loops cleanly for high-wave FPS!)
             [
-                { color: 0x34d399, x: 0, y: 14, z: 0, dist: 64, int: 1.45 },
-                { color: 0x38bdf8, x: -64, y: 12, z: -6, dist: 62, int: 1.25 },
-                { color: 0xf59e0b, x: 64, y: 12, z: -6, dist: 62, int: 1.25 },
-                { color: 0xfb7185, x: -24, y: 12, z: -84, dist: 64, int: 1.2 },
-                { color: 0xfb7185, x: 24, y: 12, z: -84, dist: 64, int: 1.2 },
-                { color: 0x4ade80, x: 0, y: 11, z: 72, dist: 56, int: 1.2 },
-                { color: 0x6ee7b7, x: -42, y: 8.5, z: -38, dist: 38, int: 0.9 },
-                { color: 0xfbbf24, x: 42, y: 8.5, z: -38, dist: 38, int: 0.9 }
+                { color: 0x34d399, x: 0, y: 15, z: 4, dist: 72, int: 1.4 },
+                { color: 0x38bdf8, x: -64, y: 13, z: -6, dist: 68, int: 1.25 },
+                { color: 0xf59e0b, x: 64, y: 13, z: -6, dist: 68, int: 1.25 },
+                { color: 0xfb7185, x: 0, y: 14, z: -84, dist: 72, int: 1.2 }
             ].forEach(l => {
                 const pt = new THREE.PointLight(l.color, l.int, l.dist, 1.4);
                 pt.position.set(l.x, l.y, l.z);
@@ -1139,11 +1126,18 @@
 
         computeFlowField(targetX, targetZ) {
             const dim = this.NAV_DIM;
+            let { gx, gz } = this.worldToNav(targetX, targetZ);
+            if (this._hasComputedFlow && this._lastFlowGx === gx && this._lastFlowGz === gz && (this._flowRefreshTick = ((this._flowRefreshTick || 0) + 1) % 4) !== 0) {
+                return;
+            }
+            this._hasComputedFlow = true;
+            this._lastFlowGx = gx;
+            this._lastFlowGz = gz;
+
             this.flowDist.fill(-1);
             this.flowDirX.fill(0);
             this.flowDirZ.fill(0);
 
-            let { gx, gz } = this.worldToNav(targetX, targetZ);
             if (this.navBlocked[gz * dim + gx]) {
                 let found = false;
                 for (let r = 1; r <= 4 && !found; r++) {
@@ -1165,15 +1159,16 @@
             let tail = 0;
             this._bfsQueue[tail++] = startIdx;
 
-            const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+            const dxArr = [1, -1, 0, 0, 1, -1, 1, -1];
+            const dzArr = [0, 0, 1, -1, 1, 1, -1, -1];
             while (head < tail) {
                 const idx = this._bfsQueue[head++];
                 const cx = idx % dim;
                 const cz = (idx / dim) | 0;
                 const baseD = this.flowDist[idx];
                 for (let d = 0; d < 8; d++) {
-                    const ox = dirs[d][0];
-                    const oz = dirs[d][1];
+                    const ox = dxArr[d];
+                    const oz = dzArr[d];
                     const nx = cx + ox;
                     const nz = cz + oz;
                     if (nx < 0 || nx >= dim || nz < 0 || nz >= dim) continue;
@@ -1188,19 +1183,20 @@
             }
 
             for (let z = 0; z < dim; z++) {
+                const rowOff = z * dim;
                 for (let x = 0; x < dim; x++) {
-                    const idx = z * dim + x;
+                    const idx = rowOff + x;
                     const curD = this.flowDist[idx];
                     if (curD <= 0) continue;
                     let bestD = curD;
                     let vx = 0, vz = 0;
                     for (let d = 0; d < 8; d++) {
-                        const nx = x + dirs[d][0];
-                        const nz = z + dirs[d][1];
+                        const nx = x + dxArr[d];
+                        const nz = z + dzArr[d];
                         if (nx < 0 || nx >= dim || nz < 0 || nz >= dim) continue;
                         const nd = this.flowDist[nz * dim + nx];
                         if (nd !== -1 && nd < bestD) {
-                            bestD = nd; vx = dirs[d][0]; vz = dirs[d][1];
+                            bestD = nd; vx = dxArr[d]; vz = dzArr[d];
                         }
                     }
                     const len = Math.hypot(vx, vz);
@@ -1227,7 +1223,8 @@
         hasLineOfSight(ax, ay, az, bx, by, bz, checkEnemyShieldsOnly = false) {
             return !this.segmentHitsObstacle(ax, ay, az, bx, by, bz, {
                 checkEnemyBlock: true,
-                includeShieldScreens: checkEnemyShieldsOnly
+                includeShieldScreens: checkEnemyShieldsOnly,
+                earlyExit: true
             }).hit;
         }
 
@@ -1287,39 +1284,59 @@
                 expand = 0,
                 isEnemyProjectile = false,
                 checkEnemyBlock = false,
-                includeShieldScreens = isEnemyProjectile
+                includeShieldScreens = isEnemyProjectile,
+                earlyExit = false
             } = opts;
 
             const dx = bx - ax;
             const dy = by - ay;
             const dz = bz - az;
 
+            const sMinX = (ax < bx ? ax : bx) - expand;
+            const sMaxX = (ax > bx ? ax : bx) + expand;
+            const sMinY = (ay < by ? ay : by) - expand;
+            const sMaxY = (ay > by ? ay : by) + expand;
+            const sMinZ = (az < bz ? az : bz) - expand;
+            const sMaxZ = (az > bz ? az : bz) + expand;
+
             let bestT = 2.0;
             let bestBox = null;
 
             const testBoxList = (list) => {
-                for (const b of list) {
+                for (let i = 0; i < list.length; i++) {
+                    const b = list[i];
                     if (b.playerOnly || b.isTurretBox) continue;
                     if (b.playerPassable && !checkEnemyBlock && !isEnemyProjectile) continue;
-                    if (b.isShieldScreen) {
-                        if (!includeShieldScreens) continue;
-                    }
+                    if (b.isShieldScreen && !includeShieldScreens) continue;
+                    if (b.maxX < sMinX || b.minX > sMaxX ||
+                        b.maxZ < sMinZ || b.minZ > sMaxZ ||
+                        b.maxY < sMinY || b.minY > sMaxY) continue;
                     const t = this._segmentHitsAABB(ax, ay, az, dx, dy, dz, b, expand);
                     if (t >= 0 && t < bestT) {
                         bestT = t;
                         bestBox = b;
+                        if (earlyExit) return true;
                     }
                 }
+                return false;
             };
 
-            testBoxList(this.boxes);
-            testBoxList(this.dynamicBoxes);
+            if (testBoxList(this.boxes) || testBoxList(this.dynamicBoxes)) {
+                return { hit: true, t: bestT, box: bestBox, point: null };
+            }
 
-            // Check Ramps via fine samples (ramps are diagonal prisms)
+            // Check Ramps via fine samples with AABB broadphase rejection
             const dist = Math.hypot(dx, dy, dz);
             const steps = Math.max(3, Math.ceil(dist / 0.8));
             const allRamps = this.dynamicRamps.length > 0 ? this.ramps.concat(this.dynamicRamps) : this.ramps;
-            for (const r of allRamps) {
+            for (let ri = 0; ri < allRamps.length; ri++) {
+                const r = allRamps[ri];
+                const rMinY = Math.min(r.yAtMin, r.yAtMax, r.yBase || 0);
+                const rMaxY = Math.max(r.yAtMin, r.yAtMax);
+                if (r.maxX < sMinX || r.minX > sMaxX ||
+                    r.maxZ < sMinZ || r.minZ > sMaxZ ||
+                    rMaxY < sMinY || rMinY > sMaxY) continue;
+
                 for (let s = 1; s <= steps; s++) {
                     const t = s / steps;
                     if (t >= bestT) break;
@@ -1334,6 +1351,9 @@
                         if (py <= surfY + expand && py >= (r.yBase || 0) - 0.15) {
                             bestT = t;
                             bestBox = r;
+                            if (earlyExit) {
+                                return { hit: true, t: bestT, box: bestBox, point: null };
+                            }
                             break;
                         }
                     }

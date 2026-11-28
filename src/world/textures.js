@@ -112,8 +112,8 @@
 
     XB.Textures = {
         /**
-         * High-detail industrial titanium deck floor with diamond-plate centers,
-         * chamfered panel seams, bolted joints, subtle conduit glow, and matched PBR maps.
+         * Clean dark architectural matte concrete & beveled sci-fi tech deck tiles
+         * (zero polka-dots or noisy lug patterns — subtle recessed seams, matte grain, and crisp conduit lines).
          */
         createFloorMaps(maxAniso = 4) {
             const size = 512;
@@ -123,11 +123,11 @@
             const { c: emitC, ctx: e } = _createCanvas(size, size);
             const rng = _makeRng(90421);
 
-            d.fillStyle = '#0b1713';
+            d.fillStyle = '#0c1612';
             d.fillRect(0, 0, size, size);
-            b.fillStyle = '#808080';
+            b.fillStyle = '#7e7e7e';
             b.fillRect(0, 0, size, size);
-            r.fillStyle = '#929292';
+            r.fillStyle = '#a4a4a4';
             r.fillRect(0, 0, size, size);
             e.fillStyle = '#000000';
             e.fillRect(0, 0, size, size);
@@ -137,112 +137,66 @@
                 for (let gy = 0; gy < 4; gy++) {
                     const px = gx * tile;
                     const py = gy * tile;
-                    const shade = ((gx + gy) % 2 === 0) ? '#10201a' : '#0d1a15';
-                    d.fillStyle = shade;
+                    const isDarkSlab = ((gx + gy) % 2 === 0);
+                    d.fillStyle = isDarkSlab ? '#101d18' : '#0d1914';
                     d.fillRect(px + 2, py + 2, tile - 4, tile - 4);
 
-                    // Brushed metal variance inside tile
-                    r.fillStyle = ((gx + gy) % 2 === 0) ? '#7a7a7a' : '#8a8a8a';
+                    r.fillStyle = isDarkSlab ? '#9a9a9a' : '#a8a8a8';
                     r.fillRect(px + 3, py + 3, tile - 6, tile - 6);
 
-                    // Recessed inner deck inset plate
-                    const isConduitTile = (gx === 1 && gy === 1) || (gx === 3 && gy === 3);
-                    if (isConduitTile) {
-                        d.fillStyle = '#07110d';
-                        d.fillRect(px + 18, py + 18, tile - 36, tile - 36);
-                        b.fillStyle = '#505050';
-                        b.fillRect(px + 18, py + 18, tile - 36, tile - 36);
-                        r.fillStyle = '#b4b4b4';
-                        r.fillRect(px + 18, py + 18, tile - 36, tile - 36);
+                    // Clean architectural inner chamfered tech-slab inset
+                    d.fillStyle = '#12221c';
+                    d.fillRect(px + 14, py + 14, tile - 28, tile - 28);
+                    b.fillStyle = '#8e8e8e';
+                    b.fillRect(px + 14, py + 14, tile - 28, tile - 28);
+                    _drawBevelRect(d, b, px + 14, py + 14, tile - 28, tile - 28, 0.05, 0.32);
 
-                        // Ribbed cable conduit cover bars
-                        for (let bar = 24; bar < tile - 24; bar += 10) {
-                            d.fillStyle = '#172c24';
-                            d.fillRect(px + 22, py + bar, tile - 44, 5);
-                            b.fillStyle = '#b8b8b8';
-                            b.fillRect(px + 22, py + bar, tile - 44, 5);
-                            r.fillStyle = '#606060';
-                            r.fillRect(px + 22, py + bar, tile - 44, 5);
-                        }
-
-                        // Subtle recessed bio-LED indicator strip
+                    if ((gx === 1 && gy === 1) || (gx === 3 && gy === 3)) {
+                        // Sleek recessed power conduit slot (clean architectural line)
+                        d.fillStyle = '#08110d';
+                        d.fillRect(px + 24, py + tile / 2 - 4, tile - 48, 8);
+                        b.fillStyle = '#525252';
+                        b.fillRect(px + 24, py + tile / 2 - 4, tile - 48, 8);
                         d.fillStyle = '#22c55e';
-                        d.fillRect(px + 24, py + tile / 2 - 2, tile - 48, 3);
-                        e.fillStyle = '#1b5e36';
-                        e.fillRect(px + 24, py + tile / 2 - 2, tile - 48, 3);
-                    } else {
-                        // Raised tread diamond lug pattern
-                        d.fillStyle = '#14261f';
-                        for (let tx = 26; tx < tile - 22; tx += 16) {
-                            for (let ty = 26; ty < tile - 22; ty += 16) {
-                                const off = ((tx + ty) / 16) % 2 === 0;
-                                d.save();
-                                d.translate(px + tx, py + ty);
-                                d.rotate(off ? Math.PI * 0.25 : -Math.PI * 0.25);
-                                d.fillRect(-4, -1.5, 8, 3);
-                                d.restore();
-
-                                b.save();
-                                b.translate(px + tx, py + ty);
-                                b.rotate(off ? Math.PI * 0.25 : -Math.PI * 0.25);
-                                b.fillStyle = '#c4c4c4';
-                                b.fillRect(-4, -1.5, 8, 3);
-                                b.restore();
-                            }
-                        }
+                        d.fillRect(px + 28, py + tile / 2 - 1, tile - 56, 2);
+                        e.fillStyle = '#185932';
+                        e.fillRect(px + 28, py + tile / 2 - 1, tile - 56, 2);
                     }
 
-                    // Beveled panel seam + grime along border
-                    _drawBevelRect(d, b, px + 2, py + 2, tile - 4, tile - 4, 0.08, 0.55);
-                    r.strokeStyle = '#cfcfcf';
-                    r.lineWidth = 4;
+                    // Clean expansion joint & subtle corner rivets
+                    _drawBevelRect(d, b, px + 2, py + 2, tile - 4, tile - 4, 0.06, 0.48);
+                    r.strokeStyle = '#c8c8c8';
+                    r.lineWidth = 3;
                     r.strokeRect(px + 1, py + 1, tile - 2, tile - 2);
 
-                    // Corner anchor rivets
-                    _drawRivet(d, px + 10, py + 10, 2.2, b);
-                    _drawRivet(d, px + tile - 10, py + 10, 2.2, b);
-                    _drawRivet(d, px + 10, py + tile - 10, 2.2, b);
-                    _drawRivet(d, px + tile - 10, py + tile - 10, 2.2, b);
+                    _drawRivet(d, px + 8, py + 8, 1.8, b);
+                    _drawRivet(d, px + tile - 8, py + 8, 1.8, b);
+                    _drawRivet(d, px + 8, py + tile - 8, 1.8, b);
+                    _drawRivet(d, px + tile - 8, py + tile - 8, 1.8, b);
                 }
             }
 
-            // Fine tactical lane stripe & micro intersection nodes (controlled brightness!)
-            d.fillStyle = 'rgba(74,222,128,0.16)';
-            d.fillRect(0, 254, size, 3);
-            d.fillRect(254, 0, 3, size);
-            e.fillStyle = '#0f3320';
+            // Crisp tactical grid seam & micro nodes
+            d.fillStyle = 'rgba(74,222,128,0.12)';
+            d.fillRect(0, 255, size, 2);
+            d.fillRect(255, 0, 2, size);
+            e.fillStyle = '#0d2b1a';
             e.fillRect(0, 255, size, 2);
             e.fillRect(255, 0, 2, size);
+            e.fillStyle = '#24663f';
+            e.fillRect(253, 253, 6, 6);
 
-            e.fillStyle = '#2d7a4c';
-            e.fillRect(252, 252, 7, 7);
-
-            // Surface scratches & industrial foot-traffic wear
-            _drawBrushedGrain(d, size, size, rng, 650, false);
-            _drawBrushedGrain(b, size, size, rng, 380, false);
-            for (let s = 0; s < 55; s++) {
-                const sx = rng() * size;
-                const sy = rng() * size;
-                const ang = rng() * Math.PI * 2;
-                const len = 10 + rng() * 34;
-                d.strokeStyle = rng() > 0.35 ? 'rgba(130,210,170,0.065)' : 'rgba(2,5,4,0.22)';
-                d.lineWidth = 1;
-                d.beginPath();
-                d.moveTo(sx, sy);
-                d.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len);
-                d.stroke();
-
-                b.strokeStyle = '#5c5c5c';
-                b.beginPath();
-                b.moveTo(sx, sy);
-                b.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len);
-                b.stroke();
-
-                r.strokeStyle = '#505050';
-                r.beginPath();
-                r.moveTo(sx, sy);
-                r.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len);
-                r.stroke();
+            // Fine matte concrete micro-grain (subtle uniform texture instead of noisy spots)
+            for (let i = 0; i < 2400; i++) {
+                const mx = rng() * size;
+                const my = rng() * size;
+                const bright = rng() > 0.5;
+                d.fillStyle = bright ? 'rgba(180,220,200,0.022)' : 'rgba(3,8,6,0.032)';
+                d.fillRect(mx, my, 2, 2);
+                b.fillStyle = bright ? 'rgba(155,155,155,0.06)' : 'rgba(95,95,95,0.06)';
+                b.fillRect(mx, my, 2, 2);
+                r.fillStyle = bright ? 'rgba(195,195,195,0.05)' : 'rgba(135,135,135,0.05)';
+                r.fillRect(mx, my, 2, 2);
             }
 
             return {
@@ -316,32 +270,33 @@
                 }
             }
 
-            // Horizontal reinforcement girder + emerald status conduit band
-            d.fillStyle = '#0a1511';
-            d.fillRect(0, 228, size, 18);
-            b.fillStyle = '#484848';
-            b.fillRect(0, 228, size, 18);
+            // Horizontal architectural girder & crisp emerald status conduit band
+            d.fillStyle = '#0c1713';
+            d.fillRect(0, 228, size, 16);
+            b.fillStyle = '#505050';
+            b.fillRect(0, 228, size, 16);
 
             d.fillStyle = '#22c55e';
-            d.fillRect(0, 234, size, 4);
-            e.fillStyle = '#1f7a44';
-            e.fillRect(0, 234, size, 4);
+            d.fillRect(0, 234, size, 3);
+            e.fillStyle = '#1b6e3d';
+            e.fillRect(0, 234, size, 3);
 
-            // Baseboard tactical hazard scuff band
-            for (let hx = 0; hx < size; hx += 32) {
-                d.fillStyle = (hx / 32) % 2 === 0 ? 'rgba(245,158,11,0.28)' : 'rgba(6,13,10,0.45)';
-                d.fillRect(hx, size - 26, 22, 16);
-            }
+            // Clean architectural concrete plinth trim along floor edge (no rust or hazard streaks)
+            d.fillStyle = '#09120e';
+            d.fillRect(0, size - 24, size, 24);
+            b.fillStyle = '#9a9a9a';
+            b.fillRect(0, size - 24, size, 24);
+            _drawBevelRect(d, b, 0, size - 24, size, 24, 0.08, 0.55);
 
-            // Bottom grime & vertical brushed streaks
-            const sootGrad = r.createLinearGradient(0, size * 0.68, 0, size);
-            sootGrad.addColorStop(0, 'rgba(210,210,210,0)');
-            sootGrad.addColorStop(1, 'rgba(235,235,235,0.45)');
-            r.fillStyle = sootGrad;
-            r.fillRect(0, size * 0.68, size, size * 0.32);
+            // Soft matte architectural sheen gradient & subtle vertical panel brush
+            const matteGrad = r.createLinearGradient(0, 0, 0, size);
+            matteGrad.addColorStop(0, 'rgba(180,180,180,0.12)');
+            matteGrad.addColorStop(1, 'rgba(215,215,215,0.28)');
+            r.fillStyle = matteGrad;
+            r.fillRect(0, 0, size, size);
 
-            _drawBrushedGrain(d, size, size, rng, 550, true);
-            _drawBrushedGrain(b, size, size, rng, 320, true);
+            _drawBrushedGrain(d, size, size, rng, 280, true);
+            _drawBrushedGrain(b, size, size, rng, 180, true);
 
             return {
                 map: _configTex(diffC, 12, 1, true, maxAniso),

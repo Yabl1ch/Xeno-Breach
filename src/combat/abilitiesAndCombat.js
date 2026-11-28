@@ -52,9 +52,37 @@
             this._buildShieldDome();
 
             this._particleGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+            this._unitTracerGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
+            this._unitTracerGeo.rotateX(Math.PI / 2);
+            this._shockGeo = new THREE.SphereGeometry(1, 12, 10);
+
             this._coinGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.09, 14);
             this._coinGeo.rotateX(Math.PI / 2);
+            this._coinMat = new THREE.MeshStandardMaterial({
+                color: 0xfacc15,
+                metalness: 0.72,
+                roughness: 0.25,
+                emissive: 0xca8a04,
+                emissiveIntensity: 0.45
+            });
+            this._coinInnerGeo = new THREE.BoxGeometry(0.24, 0.24, 0.12);
+            this._coinInnerMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+
             this._crystalGeo = new THREE.OctahedronGeometry(0.42, 0);
+            this._crystalHaloGeo = new THREE.OctahedronGeometry(0.54, 0);
+            this._crystalHaloMat = new THREE.MeshBasicMaterial({ color: 0x6ee7b7, wireframe: true, transparent: true, opacity: 0.38 });
+            this._crystalMats = new Map();
+            this._supplyGeos = new Map();
+            this._supplyMats = new Map();
+
+            this._freeParticles = [];
+            this._freeTracers = [];
+            this._freeShockwaves = [];
+            this._maxParticles = 84;
+            this._maxTracers = 48;
+            this._maxShockwaves = 16;
+            this._vMid = new THREE.Vector3();
+            this._vDiff = new THREE.Vector3();
         }
 
         _buildShieldDome() {
@@ -79,11 +107,11 @@
             this.flamePuffs = [];
             this.firePools.forEach(p => this.scene.remove(p.mesh));
             this.firePools = [];
-            this.shockwaves.forEach(s => this.scene.remove(s.mesh));
+            this.shockwaves.forEach(s => { s.mesh.visible = false; this._freeShockwaves.push(s); });
             this.shockwaves = [];
-            this.tracers.forEach(t => this.scene.remove(t.mesh));
+            this.tracers.forEach(t => { t.mesh.visible = false; this._freeTracers.push(t); });
             this.tracers = [];
-            this.particles.forEach(p => this.scene.remove(p.mesh));
+            this.particles.forEach(p => { p.mesh.visible = false; this._freeParticles.push(p); });
             this.particles = [];
             this.pickups.forEach(pk => this.scene.remove(pk.mesh));
             this.pickups = [];
@@ -936,15 +964,23 @@
             const cfg = alien.cfg;
 
             const coinCount = cfg.coinsMin + Math.floor(Math.random() * (cfg.coinsMax - cfg.coinsMin + 1));
-            for (let c = 0; c < coinCount; c++) {
-                this._spawnDynamicPickup(basePos.x, basePos.z, 'coin', 15);
+            const totalCoinVal = coinCount * 15;
+            if (coinCount > 1) {
+                const half1 = Math.ceil(coinCount / 2) * 15;
+                this._spawnDynamicPickup(basePos.x, basePos.z, 'coin', half1);
+                if (totalCoinVal - half1 > 0) {
+                    this._spawnDynamicPickup(basePos.x, basePos.z, 'coin', totalCoinVal - half1);
+                }
+            } else if (coinCount === 1) {
+                this._spawnDynamicPickup(basePos.x, basePos.z, 'coin', totalCoinVal);
             }
 
             if (Math.random() < cfg.crystalChance) {
-                const crystalCount = cfg.isBoss ? 4 : (cfg.crystalValue >= 4 ? 2 : 1);
-                const valPerCrystal = Math.max(1, Math.round(cfg.crystalValue / crystalCount));
-                for (let k = 0; k < crystalCount; k++) {
-                    this._spawnDynamicPickup(basePos.x, basePos.z, 'crystal', valPerCrystal);
+                const crystalCount = cfg.isBoss ? 2 : 1;
+                const valFirst = crystalCount === 2 ? Math.ceil(cfg.crystalValue / 2) : cfg.crystalValue;
+                this._spawnDynamicPickup(basePos.x, basePos.z, 'crystal', valFirst);
+                if (crystalCount === 2 && cfg.crystalValue - valFirst > 0) {
+                    this._spawnDynamicPickup(basePos.x, basePos.z, 'crystal', cfg.crystalValue - valFirst);
                 }
             }
 
@@ -956,46 +992,104 @@
             }
         }
 
+        _getSupplyGeo(key, factory) {
+            let g = this._supplyGeos.get(key);
+            if (!g) {
+                g = factory();
+                this._supplyGeos.set(key, g);
+            }
+            return g;
+        }
+
+        _getSupplyMat(key, factory) {
+            let m = this._supplyMats.get(key);
+            if (!m) {
+                m = factory();
+                this._supplyMats.set(key, m);
+            }
+            return m;
+        }
+
         _spawnDynamicPickup(x, z, type, value) {
+            const countBefore = this.pickups.length;
             const pk = this.spawnPickup(x, z, type, false, value);
-            const ang = Math.random() * Math.PI * 2;
-            const horiz = 2.5 + Math.random() * 4.5;
-            pk.vel = new THREE.Vector3(Math.cos(ang) * horiz, 6.2 + Math.random() * 4.0, Math.sin(ang) * horiz);
-            pk.mesh.position.y = 1.25;
+            if (this.pickups.length > countBefore) {
+                const ang = Math.random() * Math.PI * 2;
+                const horiz = 2.5 + Math.random() * 4.5;
+                pk.vel = new THREE.Vector3(Math.cos(ang) * horiz, 6.2 + Math.random() * 4.0, Math.sin(ang) * horiz);
+                pk.mesh.position.y = 1.25;
+            }
             return pk;
         }
 
         spawnPickup(x, z, forcedType = null, isStatic = false, value = 1) {
             const type = forcedType || 'hp';
+            if (!isStatic && this.pickups.length >= 70) {
+                for (let i = 0; i < this.pickups.length; i++) {
+                    const existing = this.pickups[i];
+                    if (!existing.isStatic && existing.type === type) {
+                        existing.value += value;
+                        existing.life = Math.max(existing.life, 34);
+                        return existing;
+                    }
+                }
+                if (this.pickups.length >= 78) {
+                    const dropIdx = this.pickups.findIndex(p => !p.isStatic && p.type !== 'coin' && p.type !== 'crystal');
+                    const evictIdx = dropIdx >= 0 ? dropIdx : this.pickups.findIndex(p => !p.isStatic);
+                    if (evictIdx >= 0) {
+                        const old = this.pickups[evictIdx];
+                        this.scene.remove(old.mesh);
+                        this.pickups.splice(evictIdx, 1);
+                    }
+                }
+            }
+
             const group = new THREE.Group();
 
             if (type === 'coin') {
-                const coinMat = new THREE.MeshStandardMaterial({
-                    color: 0xfacc15, emissive: 0xca8a04, emissiveIntensity: 0.45, metalness: 0.85, roughness: 0.2
-                });
-                const disk = new THREE.Mesh(this._coinGeo, coinMat);
-                const inner = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.11, 8), new THREE.MeshBasicMaterial({ color: 0xfef08a }));
-                inner.rotation.x = Math.PI / 2;
+                const disk = new THREE.Mesh(this._coinGeo, this._coinMat);
+                const inner = new THREE.Mesh(this._coinInnerGeo, this._coinInnerMat);
                 group.add(disk, inner);
             } else if (type === 'crystal') {
                 const cColor = value >= 4 ? 0xf59e0b : (value >= 2 ? 0x38bdf8 : 0x4ade80);
-                const shard = new THREE.Mesh(this._crystalGeo, new THREE.MeshBasicMaterial({ color: cColor }));
+                let cMat = this._crystalMats.get(cColor);
+                if (!cMat) {
+                    cMat = new THREE.MeshBasicMaterial({ color: cColor });
+                    this._crystalMats.set(cColor, cMat);
+                }
+                const shard = new THREE.Mesh(this._crystalGeo, cMat);
                 shard.scale.set(0.72, 1.35, 0.72);
-                const halo = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.045, 6, 16), new THREE.MeshBasicMaterial({ color: 0xecfdf5, transparent: true, opacity: 0.75 }));
+                const halo = new THREE.Mesh(
+                    this._getSupplyGeo('crystalHalo', () => new THREE.TorusGeometry(0.5, 0.045, 6, 16)),
+                    this._getSupplyMat('crystalHaloMat', () => new THREE.MeshBasicMaterial({ color: 0xecfdf5, transparent: true, opacity: 0.75 }))
+                );
                 halo.rotation.x = Math.PI / 2;
                 group.add(shard, halo);
             } else if (type === 'medkit' || type === 'hp') {
-                const box = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.52, 0.46), new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 }));
-                const c1 = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.12, 0.5), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
-                const c2 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.36, 0.5), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
+                const box = new THREE.Mesh(
+                    this._getSupplyGeo('medBox', () => new THREE.BoxGeometry(0.76, 0.52, 0.46)),
+                    this._getSupplyMat('medBoxMat', () => new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 }))
+                );
+                const crossMat = this._getSupplyMat('medCrossMat', () => new THREE.MeshBasicMaterial({ color: 0x22c55e }));
+                const c1 = new THREE.Mesh(this._getSupplyGeo('medC1', () => new THREE.BoxGeometry(0.36, 0.12, 0.5)), crossMat);
+                const c2 = new THREE.Mesh(this._getSupplyGeo('medC2', () => new THREE.BoxGeometry(0.12, 0.36, 0.5)), crossMat);
                 group.add(box, c1, c2);
             } else if (type === 'boost') {
-                const core = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.8, 8), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-                const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.06, 6, 16), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
+                const core = new THREE.Mesh(
+                    this._getSupplyGeo('boostCore', () => new THREE.CylinderGeometry(0.24, 0.24, 0.8, 8)),
+                    this._getSupplyMat('boostCoreMat', () => new THREE.MeshBasicMaterial({ color: 0x38bdf8 }))
+                );
+                const ring = new THREE.Mesh(
+                    this._getSupplyGeo('boostRing', () => new THREE.TorusGeometry(0.42, 0.06, 6, 16)),
+                    this._getSupplyMat('boostRingMat', () => new THREE.MeshBasicMaterial({ color: 0x4ade80 }))
+                );
                 group.add(core, ring);
             } else {
                 const gemColor = type === 'shield' ? 0x34d399 : 0xfacc15;
-                group.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.5, 0), new THREE.MeshBasicMaterial({ color: gemColor })));
+                group.add(new THREE.Mesh(
+                    this._getSupplyGeo('gemGeo', () => new THREE.OctahedronGeometry(0.5, 0)),
+                    this._getSupplyMat('gemMat_' + gemColor, () => new THREE.MeshBasicMaterial({ color: gemColor }))
+                ));
             }
 
             group.position.set(x, 1.0, z);
@@ -1012,20 +1106,22 @@
             let coinsCollected = 0;
             let crystalsCollected = 0;
             let count = 0;
-            const target = gameCtx.playerPos.clone().add(new THREE.Vector3(0, 1.4, 0));
+            const target = (gameCtx && gameCtx.playerPos)
+                ? new THREE.Vector3(gameCtx.playerPos.x, gameCtx.playerPos.y + 1.4, gameCtx.playerPos.z)
+                : new THREE.Vector3(0, 1.4, 0);
 
             for (let i = this.pickups.length - 1; i >= 0; i--) {
                 const pk = this.pickups[i];
                 if (pk.isStatic) continue;
                 if (pk.type === 'coin' || pk.type === 'crystal') {
                     const pColor = pk.type === 'crystal' ? 0x67e8f9 : 0xfacc15;
-                    this._spawnTracer(pk.mesh.position.clone(), target, pColor, 0.08);
-                    this._spawnParticles(pk.mesh.position.clone(), pColor, 5, 7);
+                    this._spawnTracer(pk.mesh.position, target, pColor, 0.08);
+                    this._spawnParticles(pk.mesh.position, pColor, 5, 7);
                     if (pk.type === 'coin') coinsCollected += pk.value;
                     else crystalsCollected += pk.value;
                     count++;
 
-                    gameCtx.onCollectPickup(pk, true);
+                    if (gameCtx && gameCtx.onCollectPickup) gameCtx.onCollectPickup(pk, true);
                     this.scene.remove(pk.mesh);
                     this.pickups.splice(i, 1);
                 }
@@ -1367,7 +1463,7 @@
                 }
             }
 
-            // 5. Shockwaves, Tracers, Particles
+            // 5. Pooled Shockwaves, Tracers, Particles (Zero-GC Hot Loop)
             for (let i = this.shockwaves.length - 1; i >= 0; i--) {
                 const s = this.shockwaves[i];
                 s.life -= dt;
@@ -1375,9 +1471,8 @@
                 s.mesh.scale.setScalar(0.5 + p * s.maxR);
                 s.mesh.material.opacity = Math.max(0, (1 - p) * 0.55);
                 if (s.life <= 0) {
-                    this.scene.remove(s.mesh);
-                    s.mesh.geometry.dispose();
-                    s.mesh.material.dispose();
+                    s.mesh.visible = false;
+                    this._freeShockwaves.push(s);
                     this.shockwaves.splice(i, 1);
                 }
             }
@@ -1387,9 +1482,8 @@
                 t.life -= dt;
                 t.mesh.material.opacity = Math.max(0, t.life / t.maxLife);
                 if (t.life <= 0) {
-                    this.scene.remove(t.mesh);
-                    t.mesh.geometry.dispose();
-                    t.mesh.material.dispose();
+                    t.mesh.visible = false;
+                    this._freeTracers.push(t);
                     this.tracers.splice(i, 1);
                 }
             }
@@ -1407,8 +1501,8 @@
                 p.mesh.rotation.y += dt * 6;
                 p.mesh.material.opacity = Math.max(0, p.life / p.maxLife);
                 if (p.life <= 0) {
-                    this.scene.remove(p.mesh);
-                    p.mesh.material.dispose();
+                    p.mesh.visible = false;
+                    this._freeParticles.push(p);
                     this.particles.splice(i, 1);
                 }
             }
@@ -1463,40 +1557,86 @@
         }
 
         _spawnShockwave(pos, maxR, color, life = 0.36) {
-            const waveMesh = new THREE.Mesh(
-                new THREE.SphereGeometry(1, 18, 18),
-                new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.62 })
-            );
-            waveMesh.position.copy(pos);
-            this.scene.add(waveMesh);
-            this.shockwaves.push({ mesh: waveMesh, maxR, life, maxLife: life });
+            let s = null;
+            if (this.shockwaves.length >= this._maxShockwaves) {
+                s = this.shockwaves.shift();
+            } else if (this._freeShockwaves.length > 0) {
+                s = this._freeShockwaves.pop();
+            } else {
+                const waveMesh = new THREE.Mesh(
+                    this._shockGeo,
+                    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.62 })
+                );
+                this.scene.add(waveMesh);
+                s = { mesh: waveMesh, maxR, life, maxLife: life };
+            }
+            s.mesh.visible = true;
+            s.mesh.position.copy(pos);
+            s.mesh.scale.setScalar(0.5);
+            s.mesh.material.color.setHex(color);
+            s.mesh.material.opacity = 0.62;
+            s.maxR = maxR;
+            s.life = life;
+            s.maxLife = life;
+            this.shockwaves.push(s);
         }
 
         _spawnTracer(start, end, color, thickness) {
             const dist = start.distanceTo(end);
             if (dist < 0.05) return;
-            const geo = new THREE.CylinderGeometry(thickness * 0.5, thickness * 0.5, dist, 6);
-            geo.rotateX(Math.PI / 2);
-            const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92 });
-            const mesh = new THREE.Mesh(geo, mat);
-            mesh.position.copy(start).lerp(end, 0.5);
-            mesh.lookAt(end);
-            this.scene.add(mesh);
-            this.tracers.push({ mesh, life: 0.085, maxLife: 0.085 });
+            let t = null;
+            if (this.tracers.length >= this._maxTracers) {
+                t = this.tracers.shift();
+            } else if (this._freeTracers.length > 0) {
+                t = this._freeTracers.pop();
+            } else {
+                const mesh = new THREE.Mesh(
+                    this._unitTracerGeo,
+                    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92 })
+                );
+                this.scene.add(mesh);
+                t = { mesh, life: 0.085, maxLife: 0.085 };
+            }
+            t.mesh.visible = true;
+            t.mesh.position.lerpVectors(start, end, 0.5);
+            t.mesh.lookAt(end);
+            t.mesh.scale.set(thickness, thickness, dist);
+            t.mesh.material.color.setHex(color);
+            t.mesh.material.opacity = 0.92;
+            t.life = 0.085;
+            t.maxLife = 0.085;
+            this.tracers.push(t);
         }
 
         _spawnParticles(pos, color, count, speed) {
-            for (let i = 0; i < count; i++) {
-                const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 });
-                const mesh = new THREE.Mesh(this._particleGeo, mat);
-                mesh.position.copy(pos);
-                const vel = new THREE.Vector3(
+            const effCount = this.particles.length >= this._maxParticles ? Math.min(count, 4) : count;
+            for (let i = 0; i < effCount; i++) {
+                let p = null;
+                if (this.particles.length >= this._maxParticles) {
+                    p = this.particles.shift();
+                } else if (this._freeParticles.length > 0) {
+                    p = this._freeParticles.pop();
+                } else {
+                    const mesh = new THREE.Mesh(
+                        this._particleGeo,
+                        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
+                    );
+                    this.scene.add(mesh);
+                    p = { mesh, vel: new THREE.Vector3(), life: 0.5, maxLife: 0.62 };
+                }
+                p.mesh.visible = true;
+                p.mesh.position.copy(pos);
+                p.mesh.rotation.set(0, 0, 0);
+                p.mesh.material.color.setHex(color);
+                p.mesh.material.opacity = 1;
+                p.vel.set(
                     (Math.random() - 0.5) * 2,
                     Math.random() * 1.4,
                     (Math.random() - 0.5) * 2
                 ).normalize().multiplyScalar(speed * (0.4 + Math.random() * 0.8));
-                this.scene.add(mesh);
-                this.particles.push({ mesh, vel, life: 0.34 + Math.random() * 0.28, maxLife: 0.62 });
+                p.life = 0.34 + Math.random() * 0.28;
+                p.maxLife = 0.62;
+                this.particles.push(p);
             }
         }
     }
