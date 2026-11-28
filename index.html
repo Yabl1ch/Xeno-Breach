@@ -34,6 +34,16 @@
     <div class="visor-scanlines"></div>
     <div id="speedlines"></div>
     <div id="screen-fx"></div>
+    <div id="sniper-scope" class="hidden" aria-hidden="true">
+        <svg viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice">
+            <line x1="0" y1="400" x2="365" y2="400" stroke="#4ade80" stroke-width="1.5" stroke-opacity="0.72"/>
+            <line x1="435" y1="400" x2="800" y2="400" stroke="#4ade80" stroke-width="1.5" stroke-opacity="0.72"/>
+            <line x1="400" y1="0" x2="400" y2="365" stroke="#4ade80" stroke-width="1.5" stroke-opacity="0.72"/>
+            <line x1="400" y1="435" x2="400" y2="800" stroke="#4ade80" stroke-width="1.5" stroke-opacity="0.72"/>
+            <circle cx="400" cy="400" r="190" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-opacity="0.55"/>
+            <circle cx="400" cy="400" r="3.5" fill="#4ade80"/>
+        </svg>
+    </div>
 
     <!-- Прицел и маркер попадания -->
     <div id="crosshair-wrapper" style="display:none;">
@@ -234,14 +244,14 @@
             </div>
             <h1 class="game-title">XENO-BREACH</h1>
             <p class="game-subtitle">
-                3-ярусный комплекс с боевыми ДОТами, скайбриджами и трассами БХОП! Сражайтесь против бронированных роботов-танков, снайперов и гренадёров. Выбивайте монеты на 11 пушек и обвесы, тратьте кристаллы на броню (до Квантового Экзо-Апекса) и способности перчатки, а между волнами отдыхайте и стреляйте в золотой маяк, чтобы начать следующий раунд!
+                3-ярусный комплекс с боевыми ДОТами, скайбриджами и трассами БХОП! Сражайтесь против бронированных роботов-танков, снайперов и гренадёров. Выбивайте монеты на 16 пушек (включая SCAR-H, ВСС «Винторез», AWM и Barrett M107) и обвесы, тратьте кристаллы на броню (до Квантового Экзо-Апекса) и способности перчатки, а между волнами отдыхайте и стреляйте в золотой маяк!
             </p>
 
             <div class="controls-grid">
                 <div class="ctrl-item"><span class="key-cap">W A S D</span> Движение и честный эйр-стрейф</div>
                 <div class="ctrl-item"><span class="key-cap">SPACE / CTRL</span> Баннихоп (БХО) / Присед и Подкат за укрытием</div>
-                <div class="ctrl-item"><span class="key-cap">1 – 6</span> 6 активных слотов пушек (включая Гатлинг и «Гелиос-П»)</div>
-                <div class="ctrl-item"><span class="key-cap">C / U / R</span> Постоянная стройка (Стены, Броне-ДОТ, Гатлинг) / Обвес / Поворот</div>
+                <div class="ctrl-item"><span class="key-cap">1 – 6 / ПКМ</span> 6 слотов пушек (SCAR-H, снайперки) • [ПКМ] Оптика</div>
+                <div class="ctrl-item"><span class="key-cap">C / U / R</span> Стройка у стен: Полы, Крыши, Лестницы, Ежи, ДОТ, Гатлинг</div>
                 <div class="ctrl-item"><span class="key-cap">Q E F T V Y</span> 6 ячеек перчатки (Y — Полимер-Турель!) и Кольцо</div>
                 <div class="ctrl-item"><span class="key-cap">B / TAB</span> Магазин и Крафт • Автосбор лута и починка баз после волны</div>
             </div>

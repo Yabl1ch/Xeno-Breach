@@ -119,6 +119,22 @@
                     this._noiseBurst(0.2, 1400, 0.18);
                     this._tone('sawtooth', 420, 160, 0.18, 0.15);
                     break;
+                case 'scar_h':
+                    this._noiseBurst(0.11, 1650, 0.22);
+                    this._tone('sawtooth', 520, 110, 0.14, 0.18);
+                    break;
+                case 'vss_vintorez':
+                    this._noiseBurst(0.06, 980, 0.08, 'bandpass');
+                    this._tone('sine', 340, 95, 0.08, 0.1);
+                    break;
+                case 'awp_arctic':
+                    this._noiseBurst(0.22, 2600, 0.28);
+                    this._tone('sawtooth', 980, 68, 0.28, 0.28);
+                    break;
+                case 'barrett_m82':
+                    this._noiseBurst(0.32, 950, 0.34);
+                    this._tone('sawtooth', 320, 32, 0.38, 0.34);
+                    break;
                 default:
                     this._noiseBurst(0.14, 2400, 0.15, 'bandpass');
                     this._tone('sawtooth', 980, 310, 0.16, 0.14);

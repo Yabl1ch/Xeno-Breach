@@ -1290,7 +1290,8 @@
 
             const testBoxList = (list) => {
                 for (const b of list) {
-                    if (b.playerOnly) continue;
+                    if (b.playerOnly || b.isTurretBox) continue;
+                    if (b.playerPassable && !checkEnemyBlock && !isEnemyProjectile) continue;
                     if (b.isShieldScreen) {
                         if (!includeShieldScreens) continue;
                     }
@@ -1345,7 +1346,7 @@
             const { includeShieldScreens = false } = opts;
             const checkBoxes = (list) => {
                 for (const b of list) {
-                    if (b.playerOnly) continue;
+                    if (b.playerOnly || b.playerPassable || b.isTurretBox) continue;
                     if (b.isShieldScreen && !includeShieldScreens) continue;
                     if (p.x >= b.minX && p.x <= b.maxX &&
                         p.y >= b.minY && p.y <= b.maxY &&

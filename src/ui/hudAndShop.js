@@ -103,6 +103,7 @@
             this.elTerminalPrompt = document.getElementById('terminal-prompt');
             this.elWallAttachPrompt = document.getElementById('wall-attach-prompt');
             this.elBuildBar = document.getElementById('build-hud-bar');
+            this.elSniperScope = document.getElementById('sniper-scope');
             this.elPointerHint = document.getElementById('pointer-hint');
 
             this.elWheelOverlay = document.getElementById('glove-wheel-overlay');
@@ -219,9 +220,10 @@
             XB.BUILD_BLUEPRINTS.forEach((bp, idx) => {
                 const active = idx === b.selectedBlueprintIdx;
                 const costTxt = bp.costCoins > 0 ? `${bp.costCoins}М` : `${bp.costPoly}П`;
+                const keyLbl = idx < 9 ? (idx + 1) : (idx === 9 ? '0' : '-');
                 html += `
                     <button class="build-bp-btn ${active ? 'active' : ''}" data-bp="${idx}">
-                        <span>[${idx + 1}] ${bp.shortName}</span>
+                        <span>[${keyLbl}] ${bp.shortName}</span>
                         <span class="font-mono" style="font-size:9px; opacity:0.85;">${costTxt}${bp.permanent ? ' • ∞' : ''}</span>
                     </button>
                 `;
@@ -897,7 +899,7 @@
                         </header>
                         <div>
                             <h3 class="shop-card-title">ПОЛНЫЙ БОЕКОМПЛЕКТ</h3>
-                            <p class="shop-card-desc">Перезаряжает ВСЕ 12 пушек и чинит броню/щит до 100%.</p>
+                            <p class="shop-card-desc">Перезаряжает ВСЕ ${XB.WEAPONS.length} пушек и чинит броню/щит до 100%.</p>
                         </div>
                         <footer class="shop-card-footer">
                             <button type="button" class="shop-action-btn ${g.coins >= 50 ? 'primary-buy' : ''}" data-supply="full" ${g.coins < 50 ? 'disabled' : ''}>
@@ -1090,10 +1092,11 @@
             XB.BUILD_BLUEPRINTS.forEach((bp, bpIdx) => {
                 const isSel = b.selectedBlueprintIdx === bpIdx;
                 const costLabel = bp.costCoins > 0 ? `${bp.costCoins} МОН` : `${bp.costPoly} ПОЛИМ`;
+                const keyLbl = bpIdx < 9 ? (bpIdx + 1) : (bpIdx === 9 ? '0' : '-');
                 html += `
                     <article class="shop-card ${isSel ? 'equipped' : ''}">
                         <header class="shop-card-top">
-                            <span class="shop-cat">${bp.permanent ? 'Постоянно (∞)' : 'Быстро (38с)'} • [${bpIdx + 1}]</span>
+                            <span class="shop-cat">${bp.permanent ? 'Постоянно (∞)' : 'Быстро (38с)'} • [${keyLbl}]</span>
                             <span class="shop-status-pill ${isSel ? 'ready' : ''}">${costLabel}</span>
                         </header>
                         <div>
@@ -1106,7 +1109,7 @@
                         </div>
                         <footer class="shop-card-footer">
                             <button type="button" class="shop-action-btn ${isSel ? '' : 'equip-btn'}" data-select-bp="${bpIdx}">
-                                ${isSel ? 'АКТИВНО ДЛЯ [C]' : `ВЫБРАТЬ ЧЕРТЁЖ [${bpIdx + 1}]`}
+                                ${isSel ? 'АКТИВНО ДЛЯ [C]' : `ВЫБРАТЬ ЧЕРТЁЖ [${keyLbl}]`}
                             </button>
                         </footer>
                     </article>

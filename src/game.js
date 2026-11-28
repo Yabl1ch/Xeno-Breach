@@ -42,7 +42,7 @@
             this.medkitCount = 2;
             this.maxMedkits = 4;
 
-            // 12 Weapons -> 6 Active Combat Slots [1..6] + Levels + Attachments
+            // 16 Weapons -> 6 Active Combat Slots [1..6] + Levels + Attachments
             this.unlockedWeapons = new Set([0, 1, 2, 3, 4, 5]);
             this.equippedWeaponSlots = [0, 1, 2, 3, 4, 5];
             this.activeWeaponSlot = 0;
@@ -59,6 +59,7 @@
             this.chargeTime = 0;
             this.pumpedPolymer = 0;
             this.chargeTickAcc = 0;
+            this.isAiming = false;
 
             // Input state
             this.keys = {};
@@ -185,6 +186,7 @@
                 waveState: this.waveState,
                 timeStopActive: this.combat.timeStopTimer > 0,
                 timeSlowActive: this.combat.timeSlowTimer > 0,
+                isAiming: this.isAiming,
                 showToast: (msg, color) => this.showToast(msg, color),
                 spendResources: (coinCost, polyCost) => {
                     this.coins = Math.max(0, this.coins - (coinCost || 0));
@@ -209,6 +211,7 @@
                 onDamageAlien: (a, dmg, pt, col, isHead) => this.combat.damageAlien(a, dmg, pt, col, isHead, 1.75, this.getCombatContext()),
                 onDamagePlayer: (amt, srcPos) => this.damagePlayer(amt, srcPos),
                 onDamageStructure: (st, dmg, attacker) => this.building.damageStructure(st, dmg, attacker, this.getCombatContext()),
+                onDamageTurret: (tr, dmg, attacker) => this.building.damageTurret(tr, dmg, attacker, this.getCombatContext()),
                 spawnParticles: (p, c, n, s) => this.combat._spawnParticles(p, c, n, s),
                 spawnShockwave: (p, r, c, l) => this.combat._spawnShockwave(p, r, c, l),
                 onCollectPickup: (pk, silent) => this.onCollectPickup(pk, silent),
@@ -251,9 +254,10 @@
                         const on = this.building.toggleBuildMode();
                         this.isCharging = false;
                         this.mouseDown = false;
+                        this.isAiming = false;
                         this.ui.elChargeWrap.classList.remove('show');
                         this.ui.rebuildBuildBar();
-                        this.showToast(on ? 'РЕЖИМ СТРОЙКИ [1-6] ЧЕРТЁЖ • [ЛКМ] ПОСТРОИТЬ • [R] ПОВОРОТ' : 'РЕЖИМ БОЯ', '#4ade80');
+                        this.showToast(on ? 'РЕЖИМ СТРОЙКИ [1-0/-] ЧЕРТЁЖ • [ЛКМ] ПОСТРОИТЬ • [R] ПОВОРОТ' : 'РЕЖИМ БОЯ', '#4ade80');
                         this.ui.syncHUD();
                         return;
                     }
@@ -265,12 +269,14 @@
                     }
 
                     if (this.building.buildMode) {
-                        if (e.code === 'Digit1') { this.building.selectBlueprint(0); this.ui.rebuildBuildBar(); }
-                        if (e.code === 'Digit2') { this.building.selectBlueprint(1); this.ui.rebuildBuildBar(); }
-                        if (e.code === 'Digit3') { this.building.selectBlueprint(2); this.ui.rebuildBuildBar(); }
-                        if (e.code === 'Digit4') { this.building.selectBlueprint(3); this.ui.rebuildBuildBar(); }
-                        if (e.code === 'Digit5') { this.building.selectBlueprint(4); this.ui.rebuildBuildBar(); }
-                        if (e.code === 'Digit6') { this.building.selectBlueprint(5); this.ui.rebuildBuildBar(); }
+                        const bpKeyMap = {
+                            Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4,
+                            Digit6: 5, Digit7: 6, Digit8: 7, Digit9: 8, Digit0: 9, Minus: 10
+                        };
+                        if (bpKeyMap[e.code] !== undefined) {
+                            this.building.selectBlueprint(bpKeyMap[e.code]);
+                            this.ui.rebuildBuildBar();
+                        }
                         if (e.code === 'KeyR' && !wasDown) { this.building.rotateBlueprint(); }
                     } else {
                         // 6 Active Weapon Slots [1..6]
@@ -354,8 +360,11 @@
                 this.isPointerLocked = (document.pointerLockElement === this.canvas);
                 if (this.isPointerLocked) {
                     this.ui.elPointerHint.style.opacity = '0';
-                } else if (this.state === 'PLAYING' && !this.isTouchDevice) {
-                    this.ui.elPointerHint.style.opacity = '1';
+                } else {
+                    this.isAiming = false;
+                    if (this.state === 'PLAYING' && !this.isTouchDevice) {
+                        this.ui.elPointerHint.style.opacity = '1';
+                    }
                 }
             });
 
@@ -375,7 +384,9 @@
                     return;
                 }
 
-                const sens = 0.0022;
+                const curW = XB.WEAPONS[this.getActiveWeaponIndex()];
+                const adsScale = this.isAiming ? Math.max(0.26, (curW.adsFov || 56) / 78) : 1.0;
+                const sens = 0.0022 * adsScale;
                 if (this.isPointerLocked) {
                     this.player.yaw -= e.movementX * sens;
                     this.player.pitch = Math.max(-1.3, Math.min(1.3, this.player.pitch - e.movementY * sens));
@@ -384,8 +395,8 @@
                     const dy = e.clientY - this.lastMouse.y;
                     this.lastMouse.x = e.clientX;
                     this.lastMouse.y = e.clientY;
-                    this.player.yaw -= dx * 0.0045;
-                    this.player.pitch = Math.max(-1.3, Math.min(1.3, this.player.pitch - dy * 0.0045));
+                    this.player.yaw -= dx * 0.0045 * adsScale;
+                    this.player.pitch = Math.max(-1.3, Math.min(1.3, this.player.pitch - dy * 0.0045 * adsScale));
                 }
             });
 
@@ -418,16 +429,25 @@
                         if (nextAtt) this.showToast(`ОБВЕС ДЛЯ [U]: ${nextAtt.name}`, nextAtt.color);
                         return;
                     }
-                    this.dragLooking = true;
-                    this.lastMouse.x = e.clientX;
-                    this.lastMouse.y = e.clientY;
+                    if (!this.ui.wheelOpen) this.isAiming = true;
+                    if (!this.isPointerLocked) {
+                        this.dragLooking = true;
+                        this.lastMouse.x = e.clientX;
+                        this.lastMouse.y = e.clientY;
+                    }
                 }
             });
 
             global.addEventListener('mouseup', (e) => {
                 if (e.button === 0 && this.isCharging) this._releaseChargeShot();
-                this.mouseDown = false;
-                this.dragLooking = false;
+                if (e.button === 2) {
+                    this.isAiming = false;
+                    this.dragLooking = false;
+                }
+                if (e.button === 0) {
+                    this.mouseDown = false;
+                    this.dragLooking = false;
+                }
             });
 
             this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -600,7 +620,10 @@
             if (this.ui.wheelOpen) this.ui.closeWheel(false);
             this.state = 'PAUSED';
             this.mouseDown = false;
+            this.isAiming = false;
             this.isCharging = false;
+            if (this.ui.elSniperScope) this.ui.elSniperScope.classList.add('hidden');
+            this.ui.crosshair.style.opacity = '1';
             this.ui.elChargeWrap.classList.remove('show');
             this.ui.pauseScreen.classList.remove('hidden');
             this._exitPointerLockSafe();
@@ -617,7 +640,10 @@
             if (this.ui.wheelOpen) this.ui.closeWheel(false);
             this.state = 'SHOP';
             this.mouseDown = false;
+            this.isAiming = false;
             this.isCharging = false;
+            if (this.ui.elSniperScope) this.ui.elSniperScope.classList.add('hidden');
+            this.ui.crosshair.style.opacity = '1';
             this.ui.elChargeWrap.classList.remove('show');
             this.ui.renderShop();
             this.ui.shopScreen.classList.remove('hidden');
@@ -636,7 +662,10 @@
             if (this.ui.wheelOpen) this.ui.closeWheel(false);
             this.state = 'GAMEOVER';
             this.mouseDown = false;
+            this.isAiming = false;
             this.isCharging = false;
+            if (this.ui.elSniperScope) this.ui.elSniperScope.classList.add('hidden');
+            this.ui.crosshair.style.opacity = '1';
             this.ui.elChargeWrap.classList.remove('show');
             this._exitPointerLockSafe();
             document.getElementById('go-score').textContent = this.score;
@@ -868,6 +897,7 @@
 
             this.reloading = false;
             this.reloadTimer = 0;
+            this.isAiming = false;
             this.isCharging = false;
             this.chargeTime = 0;
             this.pumpedPolymer = 0;
@@ -887,6 +917,7 @@
             const stats = this.combat.getWeaponStats(wIdx, this.weaponLevels[wIdx], this.equippedAttachments[wIdx]);
             if (this.reloading || this.ammo[wIdx] >= stats.maxAmmo) return;
 
+            this.isAiming = false;
             this.isCharging = false;
             this.chargeTime = 0;
             this.ui.elChargeWrap.classList.remove('show');
@@ -1339,12 +1370,16 @@
             this.camera.rotation.x = this.player.pitch;
             this.camera.rotation.z = this.player.cameraRoll;
 
+            const canAds = this.isAiming && !this.building.buildMode && !this.ui.wheelOpen && !this.reloading;
             const speedExtra = Math.max(0, (horizSpeed - 11) * 0.85) + (this.boostActiveTimer > 0 ? 7.5 : 0);
-            const targetFov = Math.min(104, 78 + speedExtra);
+            const targetFov = canAds ? (curWeapon.adsFov || 56) : Math.min(104, 78 + speedExtra);
             if (Math.abs(this.camera.fov - targetFov) > 0.05) {
-                this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, rawDt * 9);
+                this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, rawDt * (canAds ? 15 : 9));
                 this.camera.updateProjectionMatrix();
             }
+            const wantsScope = canAds && (curWeapon.adsFov || 78) <= 48;
+            if (this.ui.elSniperScope) this.ui.elSniperScope.classList.toggle('hidden', !wantsScope);
+            this.ui.crosshair.style.opacity = wantsScope ? '0' : '1';
             this.ui.speedlines.style.opacity = Math.max(0, Math.min(0.82, (horizSpeed - 17.0) / 16 + (this.boostActiveTimer > 0 ? 0.3 : 0))).toFixed(2);
 
             this.ui.elSpeedPill.textContent = `SPD ${horizSpeed.toFixed(1)} м/с`;
@@ -1389,6 +1424,7 @@
                 slideTimer: this.player.slideTimer,
                 wheelOpen: this.ui.wheelOpen,
                 buildMode: this.building.buildMode,
+                isAiming: canAds,
                 polymerFireBuffTimer: this.combat.polymerFireBuffTimer,
                 timeStopTimer: this.combat.timeStopTimer,
                 timeSlowTimer: this.combat.timeSlowTimer

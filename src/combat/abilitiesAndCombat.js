@@ -118,7 +118,7 @@
             let recoilMult = 1.0;
             let reloadMult = 1.0;
             let rateMult = 1.0;
-            let critMult = 1.75;
+            let critMult = 1.75 + (base.critBonus || 0);
             let polyBurst = false;
 
             if (equippedAttMap) {
@@ -667,13 +667,14 @@
                 return;
             }
 
-            // 5. HITSCAN (Rifle, Shotgun, Minigun, SMG, Railgun)
+            // 5. HITSCAN (Rifle, Shotgun, Minigun, SMG, Railgun, SCAR-H, Snipers)
             let anyHit = false;
             let anyKill = false;
+            const aimSpreadMult = gameCtx.isAiming ? 0.3 : 1.0;
 
             for (let p = 0; p < weaponCfg.pellets; p++) {
-                const sx = (Math.random() - 0.5) * 2 * stats.spread;
-                const sy = (Math.random() - 0.5) * 2 * stats.spread;
+                const sx = (Math.random() - 0.5) * 2 * stats.spread * aimSpreadMult;
+                const sy = (Math.random() - 0.5) * 2 * stats.spread * aimSpreadMult;
 
                 this.raycaster.setFromCamera(new THREE.Vector2(sx, sy), this.camera);
                 const hits = this.raycaster.intersectObjects(targetMeshes, true);
@@ -1069,6 +1070,8 @@
             const bulletScale = this.timeStopTimer > 0 ? 0.0 : (this.timeSlowTimer > 0 ? 0.22 : 1.0);
             const prevBulletPos = new THREE.Vector3();
 
+            const dmgTurretFn = gameCtx.onDamageTurret || (gameCtx.building ? (tr, d, att) => gameCtx.building.damageTurret(tr, d, att, gameCtx) : null);
+
             for (let i = this.enemies.enemyBullets.length - 1; i >= 0; i--) {
                 const b = this.enemies.enemyBullets[i];
                 const effDt = b.reflected ? dt : dt * bulletScale;
@@ -1105,6 +1108,19 @@
                         if (boomPos.distanceTo(playerCenter) <= b.blastRadius &&
                             this.map.hasLineOfSight(boomPos.x, boomPos.y + 0.35, boomPos.z, playerCenter.x, playerCenter.y, playerCenter.z, true)) {
                             gameCtx.damagePlayer(b.damage, boomPos);
+                        }
+                        if (gameCtx.turrets && gameCtx.turrets.length > 0 && dmgTurretFn) {
+                            for (let ti = gameCtx.turrets.length - 1; ti >= 0; ti--) {
+                                const tr = gameCtx.turrets[ti];
+                                if (!tr || tr.hp <= 0) continue;
+                                const tx = tr.pos ? tr.pos.x : tr.x;
+                                const ty = tr.pos ? tr.pos.y : tr.y;
+                                const tz = tr.pos ? tr.pos.z : tr.z;
+                                if (Math.hypot(tx - boomPos.x, tz - boomPos.z) <= b.blastRadius + 0.8 &&
+                                    Math.abs(ty + 1.0 - boomPos.y) <= b.blastRadius + 1.0) {
+                                    dmgTurretFn(tr, b.damage * 1.3, null);
+                                }
+                            }
                         }
                         if (b.ringMesh) this.scene.remove(b.ringMesh);
                         this.scene.remove(b.mesh);
@@ -1149,12 +1165,36 @@
                         this.enemies.enemyBullets.splice(i, 1);
                         continue;
                     }
-                } else if (b.mesh.position.distanceTo(playerCenter) < 1.35) {
-                    gameCtx.damagePlayer(b.damage, b.mesh.position);
-                    this._spawnParticles(b.mesh.position, b.color, 7, 4);
-                    this.scene.remove(b.mesh);
-                    this.enemies.enemyBullets.splice(i, 1);
-                    continue;
+                } else {
+                    let hitTurret = false;
+                    if (gameCtx.turrets && gameCtx.turrets.length > 0 && dmgTurretFn) {
+                        for (let ti = gameCtx.turrets.length - 1; ti >= 0; ti--) {
+                            const tr = gameCtx.turrets[ti];
+                            if (!tr || tr.hp <= 0) continue;
+                            const tx = tr.pos ? tr.pos.x : tr.x;
+                            const ty = tr.pos ? tr.pos.y : tr.y;
+                            const tz = tr.pos ? tr.pos.z : tr.z;
+                            const dSqT = Math.pow(b.mesh.position.x - tx, 2) +
+                                         Math.pow(b.mesh.position.y - (ty + 1.0), 2) +
+                                         Math.pow(b.mesh.position.z - tz, 2);
+                            if (dSqT < 1.55 * 1.55) {
+                                dmgTurretFn(tr, b.damage * 1.25, null);
+                                this._spawnParticles(b.mesh.position, b.color, 7, 4);
+                                this.scene.remove(b.mesh);
+                                this.enemies.enemyBullets.splice(i, 1);
+                                hitTurret = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (hitTurret) continue;
+                    if (b.mesh.position.distanceTo(playerCenter) < 1.35) {
+                        gameCtx.damagePlayer(b.damage, b.mesh.position);
+                        this._spawnParticles(b.mesh.position, b.color, 7, 4);
+                        this.scene.remove(b.mesh);
+                        this.enemies.enemyBullets.splice(i, 1);
+                        continue;
+                    }
                 }
 
                 const outBounds = Math.abs(b.mesh.position.x) > this.map.ARENA_LIMIT_X + 1 ||

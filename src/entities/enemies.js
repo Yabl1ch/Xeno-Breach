@@ -529,6 +529,8 @@
             }
 
             const flowVec = new THREE.Vector3();
+            const realPlayerPos = playerPos;
+            const realPlayerVel = playerVel;
 
             for (let i = this.aliens.length - 1; i >= 0; i--) {
                 const a = this.aliens[i];
@@ -674,8 +676,42 @@
 
                 if (a.bossRing) a.bossRing.rotation.z += dt * 2.2;
 
-                // 7. Movement & Role-Based Tactical AI (Zero Wall-Clipping, Strict LOS, Craft-Wall Assault)
+                // 7. Movement & Role-Based Tactical AI (Turret Aggro + Zero Wall-Clipping + Craft-Wall Assault)
+                const dmgTurretFn = combatCtx.onDamageTurret || (combatCtx.building ? (tr, d, att) => combatCtx.building.damageTurret(tr, d, att, combatCtx) : null);
                 const enemyHeight = 2.45 * a.baseScale;
+                let playerPos = realPlayerPos;
+                let playerVel = realPlayerVel;
+                let targetTurret = null;
+                const getTurretCoords = (t) => (t.pos || (t.group && t.group.position) || { x: t.x || 0, y: t.y || 0, z: t.z || 0 });
+                if (!a.exitingDoor && combatCtx.turrets && combatCtx.turrets.length > 0) {
+                    if (a.aggroTurret && a.aggroTurret.hp > 0 && combatCtx.turrets.includes(a.aggroTurret)) {
+                        const tp = getTurretCoords(a.aggroTurret);
+                        const dAggro = Math.hypot(tp.x - pos.x, tp.z - pos.z);
+                        if (dAggro < 52) targetTurret = a.aggroTurret;
+                        else a.aggroTurret = null;
+                    } else {
+                        a.aggroTurret = null;
+                    }
+                    if (!targetTurret) {
+                        const dReal = Math.hypot(realPlayerPos.x - pos.x, realPlayerPos.z - pos.z);
+                        let bestDist = Infinity;
+                        for (const t of combatCtx.turrets) {
+                            if (!t || t.hp <= 0) continue;
+                            const tp = getTurretCoords(t);
+                            const dtTur = Math.hypot(tp.x - pos.x, tp.z - pos.z);
+                            const prioDist = Math.min(34, Math.max(20, dReal * 1.15));
+                            if (dtTur < bestDist && dtTur < prioDist) {
+                                bestDist = dtTur;
+                                targetTurret = t;
+                            }
+                        }
+                    }
+                    if (targetTurret) {
+                        const tp = getTurretCoords(targetTurret);
+                        playerPos = new THREE.Vector3(tp.x, tp.y, tp.z);
+                        playerVel = { x: 0, y: 0, z: 0 };
+                    }
+                }
                 const toPlayer = new THREE.Vector3(playerPos.x - pos.x, 0, playerPos.z - pos.z);
                 const distToPlayer = toPlayer.length();
                 if (distToPlayer > 0.01) toPlayer.divideScalar(distToPlayer);
@@ -740,8 +776,12 @@
                         if (a.meleeChargeWindup <= 0) {
                             spawnShockwave(pos.clone().add(new THREE.Vector3(0, 0.3, 0)), 6.2, 0xf97316, 0.35);
                             this.sound.playGiantStomp(1.0);
-                            if (distToPlayer <= 6.2 && Math.abs(playerPos.y - pos.y) < 3.0 &&
-                                this.map.hasLineOfSight(pos.x, pos.y + 1.0, pos.z, playerPos.x, playerPos.y + 1.0, playerPos.z, true)) {
+                            if (targetTurret && dmgTurretFn && distToPlayer <= 6.8 && Math.abs(playerPos.y - pos.y) < 3.0) {
+                                dmgTurretFn(targetTurret, a.damage * 1.45, a);
+                            }
+                            const realDist = Math.hypot(realPlayerPos.x - pos.x, realPlayerPos.z - pos.z);
+                            if (realDist <= 6.2 && Math.abs(realPlayerPos.y - pos.y) < 3.0 &&
+                                this.map.hasLineOfSight(pos.x, pos.y + 1.0, pos.z, realPlayerPos.x, realPlayerPos.y + 1.0, realPlayerPos.z, true)) {
                                 onDamagePlayer(a.damage, pos);
                             }
                             a.attackCooldown = 1.65;
@@ -869,11 +909,16 @@
                         }
                     } else if (!blockingStruct && a.attackCooldown <= 0 && a.meleeChargeWindup <= 0) {
                         if (!a.ranged) {
-                            if (distToPlayer <= a.attackRange && Math.abs(playerPos.y - pos.y) < 3.0 && hasLOS) {
+                            const reach = a.attackRange + (targetTurret ? 1.15 : 0);
+                            if (distToPlayer <= reach && Math.abs(playerPos.y - pos.y) < 3.0 && hasLOS) {
                                 if (a.cfg.hasGroundSlam) {
                                     a.meleeChargeWindup = 0.36;
                                 } else {
-                                    onDamagePlayer(a.damage, pos);
+                                    if (targetTurret && dmgTurretFn) {
+                                        dmgTurretFn(targetTurret, a.damage * 1.35, a);
+                                    } else if (!targetTurret) {
+                                        onDamagePlayer(a.damage, pos);
+                                    }
                                     a.attackCooldown = a.type === 'shieldbearer' ? 1.25 : 0.95;
                                     a.attackWindup = 0.28;
                                 }

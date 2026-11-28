@@ -343,6 +343,83 @@
                 g.add(this.vulcanBarrelCluster);
             }
 
+            // 12: scar_h ("FN SCAR-H «АВАНГАРД»")
+            {
+                const g = makeWeaponGroup();
+                const fdeMat = new THREE.MeshStandardMaterial({ color: 0xb4945c, metalness: 0.45, roughness: 0.38 });
+                const em = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+                addMesh(g, new THREE.BoxGeometry(0.105, 0.09, 0.56), fdeMat, 0, 0.04, -0.04); // monolithic upper
+                addMesh(g, new THREE.BoxGeometry(0.095, 0.065, 0.42), darkAlloy, 0, -0.03, 0.02); // lower receiver
+                addMesh(g, new THREE.BoxGeometry(0.06, 0.018, 0.52), warmSteel, 0, 0.092, -0.06); // full top picatinny
+                addMesh(g, new THREE.BoxGeometry(0.09, 0.1, 0.2), fdeMat, 0, 0.01, 0.28); // scar cheek-rest stock stub
+                addMesh(g, new THREE.CylinderGeometry(0.022, 0.025, 0.42, 10), warmSteel, 0, 0.03, -0.44, Math.PI / 2); // fluted barrel
+                addMesh(g, new THREE.CylinderGeometry(0.03, 0.024, 0.08, 8), darkAlloy, 0, 0.03, -0.66, Math.PI / 2); // 3-prong brake
+                // ACOG compact optic
+                addMesh(g, new THREE.CylinderGeometry(0.026, 0.03, 0.14, 10), darkAlloy, 0, 0.125, -0.04, Math.PI / 2);
+                addMesh(g, new THREE.BoxGeometry(0.02, 0.022, 0.06), em, 0, 0.155, -0.04); // tritium fiber top
+                const mag = addMesh(g, new THREE.BoxGeometry(0.056, 0.19, 0.092), fdeMat, 0, -0.14, -0.09, 0.12);
+                this.weaponMags[12] = mag;
+            }
+
+            // 13: vss_vintorez ("ВСС «ВИНТОРЕЗ-П»")
+            {
+                const g = makeWeaponGroup();
+                const oliveMat = new THREE.MeshStandardMaterial({ color: 0x1e382b, metalness: 0.45, roughness: 0.46 });
+                const em = new THREE.MeshBasicMaterial({ color: 0x34d399 });
+                addMesh(g, new THREE.BoxGeometry(0.095, 0.12, 0.46), darkAlloy, 0, 0, 0.02);
+                addMesh(g, new THREE.BoxGeometry(0.075, 0.095, 0.22), oliveMat, 0, -0.02, 0.26); // skeleton stock wrist
+                // Iconic thick matte integrated suppressor!
+                addMesh(g, new THREE.CylinderGeometry(0.046, 0.046, 0.56, 12), darkAlloy, 0, 0.025, -0.42, Math.PI / 2);
+                addMesh(g, new THREE.TorusGeometry(0.048, 0.008, 6, 14), warmSteel, 0, 0.025, -0.34); // barrel clamp collar
+                addMesh(g, new THREE.TorusGeometry(0.048, 0.008, 6, 14), em, 0, 0.025, -0.64);
+                // Side-mounted PSO-1 optical scope
+                addMesh(g, new THREE.BoxGeometry(0.03, 0.045, 0.08), warmSteel, -0.045, 0.085, -0.04);
+                addMesh(g, new THREE.CylinderGeometry(0.028, 0.032, 0.24, 10), gunSteel, -0.025, 0.125, -0.06, Math.PI / 2);
+                addMesh(g, new THREE.BoxGeometry(0.022, 0.022, 0.02), em, -0.025, 0.125, -0.18);
+                const mag = addMesh(g, new THREE.BoxGeometry(0.046, 0.16, 0.074), oliveMat, 0, -0.12, -0.08, 0.08);
+                this.weaponMags[13] = mag;
+            }
+
+            // 14: awp_arctic ("AWM «ПОЛЯРНИК-L96»")
+            {
+                const g = makeWeaponGroup();
+                const arcticMat = new THREE.MeshStandardMaterial({ color: 0x164e3a, metalness: 0.48, roughness: 0.36 });
+                const cy = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+                addMesh(g, new THREE.BoxGeometry(0.11, 0.135, 0.54), arcticMat, 0, -0.01, -0.02); // polymer chassis
+                addMesh(g, new THREE.BoxGeometry(0.09, 0.08, 0.44), darkAlloy, 0, 0.05, -0.08); // bolt action receiver
+                addMesh(g, new THREE.CylinderGeometry(0.022, 0.028, 0.68, 10), warmSteel, 0, 0.045, -0.56, Math.PI / 2); // free-float sniper barrel
+                addMesh(g, new THREE.BoxGeometry(0.055, 0.042, 0.09), darkAlloy, 0, 0.045, -0.9, Math.PI / 2); // fluted muzzle brake
+                addMesh(g, new THREE.BoxGeometry(0.025, 0.022, 0.42), cy, 0, 0.068, -0.45); // cryo tracer strip
+                // Tall long-range telescopic sniper optic!
+                addMesh(g, new THREE.BoxGeometry(0.032, 0.04, 0.04), darkAlloy, 0, 0.105, 0.02);
+                addMesh(g, new THREE.BoxGeometry(0.032, 0.04, 0.04), darkAlloy, 0, 0.105, -0.12);
+                addMesh(g, new THREE.CylinderGeometry(0.034, 0.026, 0.34, 12), darkAlloy, 0, 0.138, -0.06, Math.PI / 2);
+                addMesh(g, new THREE.TorusGeometry(0.035, 0.005, 6, 14), cy, 0, 0.138, -0.23);
+                this.awpBolt = addMesh(g, new THREE.BoxGeometry(0.045, 0.022, 0.045), warmSteel, 0.058, 0.055, 0.04);
+                const mag = addMesh(g, new THREE.BoxGeometry(0.052, 0.12, 0.088), darkAlloy, 0, -0.11, -0.08);
+                this.weaponMags[14] = mag;
+            }
+
+            // 15: barrett_m82 ("BARRETT M107 «КАЛИБР-.50»")
+            {
+                const g = makeWeaponGroup();
+                const orMat = new THREE.MeshBasicMaterial({ color: 0xf97316 });
+                addMesh(g, new THREE.BoxGeometry(0.145, 0.16, 0.64), darkAlloy, 0, 0, -0.04); // massive .50 receiver
+                addMesh(g, new THREE.BoxGeometry(0.125, 0.04, 0.56), warmSteel, 0, 0.09, -0.1); // continuous upper rail
+                addMesh(g, new THREE.CylinderGeometry(0.03, 0.036, 0.78, 12), gunSteel, 0, 0.045, -0.66, Math.PI / 2); // mammoth barrel
+                // Iconic Giant Rectangular Tank Arrowhead Muzzle Brake!
+                addMesh(g, new THREE.BoxGeometry(0.12, 0.062, 0.14), warmSteel, 0, 0.045, -1.06);
+                addMesh(g, new THREE.BoxGeometry(0.13, 0.022, 0.1), orMat, 0, 0.045, -1.06);
+                // Folded front bipod legs
+                addMesh(g, new THREE.CylinderGeometry(0.014, 0.014, 0.26, 6), warmSteel, -0.075, -0.05, -0.44, Math.PI / 2.2);
+                addMesh(g, new THREE.CylinderGeometry(0.014, 0.014, 0.26, 6), warmSteel, 0.075, -0.05, -0.44, Math.PI / 2.2);
+                // Giant 50mm Heavy Scope
+                addMesh(g, new THREE.CylinderGeometry(0.042, 0.032, 0.36, 12), darkAlloy, 0, 0.155, -0.08, Math.PI / 2);
+                addMesh(g, new THREE.TorusGeometry(0.043, 0.006, 6, 16), orMat, 0, 0.155, -0.26);
+                const mag = addMesh(g, new THREE.BoxGeometry(0.064, 0.18, 0.14), gunSteel, 0, -0.14, -0.12);
+                this.weaponMags[15] = mag;
+            }
+
             // Build Dynamic Visible 3D Attachment Sub-Meshes for EACH Weapon
             const attAlloy = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.2 });
             const attGlow = new THREE.MeshBasicMaterial({ color: 0x67e8f9 });
@@ -484,7 +561,7 @@
             this.weaponMeshes.forEach((m, i) => {
                 m.visible = (i === weaponIndex);
             });
-            const safeIdx = Math.max(0, Math.min(weaponIndex, 11));
+            const safeIdx = Math.max(0, Math.min(weaponIndex, this.weaponMeshes.length - 1));
             this.syncWeaponAttachments(safeIdx, equippedAttachments);
             this.drawProgress = 0;
         }
@@ -492,6 +569,9 @@
         onWeaponFire(weaponIndex, weaponCfg, recoilMult = 1.0) {
             this.weaponRecoil = (weaponCfg.recoil || 0.08) * recoilMult;
             this.weaponRecoilRoll = ((Math.random() - 0.5) * 0.09) * recoilMult;
+            if (weaponCfg.id === 'awp_arctic' || weaponCfg.id === 'barrett_m82') {
+                this.shotgunPumpAnim = 0.85;
+            }
             if (weaponCfg.id === 'minigun' || weaponCfg.id === 'vulcan_gatling') {
                 this.minigunSpin = 42;
                 this.minigunHeat = Math.min(1, this.minigunHeat + 0.045);
@@ -547,6 +627,7 @@
                 playerPitch = 0,
                 horizSpeed = 0,
                 moveRight = 0,
+                isAiming = false,
                 bobTime,
                 slideTimer,
                 wheelOpen,
@@ -591,27 +672,33 @@
                 const magDrop = reloading
                     ? (reloadProg < 0.5 ? Math.sin(reloadProg * Math.PI) * 0.24 : Math.pow(Math.max(0, 1 - reloadProg) * 2, 1.4) * 0.24)
                     : 0;
-                curMag.position.y = (curWeapon.id === 'minigun' || curWeapon.id === 'smg' ? -0.15 : (curWeapon.id === 'flamer' ? -0.12 : -0.13)) - magDrop;
+                curMag.position.y = (curWeapon.id === 'minigun' || curWeapon.id === 'smg' ? -0.15 : (curWeapon.id === 'flamer' || curWeapon.id === 'vss_vintorez' ? -0.12 : (curWeapon.id === 'scar_h' || curWeapon.id === 'barrett_m82' ? -0.14 : -0.13))) - magDrop;
             }
 
-            const breathY = Math.sin(tNow * 0.55) * 0.004;
+            const breathY = Math.sin(tNow * 0.55) * (isAiming ? 0.001 : 0.004);
+            const adsBlend = isAiming ? 1 : 0;
             this.weaponHolder.position.set(
-                0.31 + this.swayX - speedTilt * 0.03 + Math.cos(bobTime * 0.5) * (0.016 + speedTilt * 0.008),
-                -0.25 + breathY + this.swayY - reloadDip - drawDrop - (buildMode ? 0.14 : 0) + Math.abs(Math.sin(bobTime)) * 0.016 - (slideTimer > 0 ? 0.05 : 0),
-                -0.52 + this.weaponRecoil + boltPull * 0.25
+                (isAiming ? 0.14 : 0.31) + this.swayX * (isAiming ? 0.25 : 1) - speedTilt * (isAiming ? 0 : 0.03) + Math.cos(bobTime * 0.5) * ((0.016 + speedTilt * 0.008) * (isAiming ? 0.15 : 1)),
+                (isAiming ? -0.175 : -0.25) + breathY + this.swayY * (isAiming ? 0.25 : 1) - reloadDip - drawDrop - (buildMode ? 0.14 : 0) + Math.abs(Math.sin(bobTime)) * (isAiming ? 0.003 : 0.016) - (slideTimer > 0 ? 0.05 : 0),
+                -0.52 + adsBlend * 0.08 + this.weaponRecoil + boltPull * 0.25
             );
             this.weaponHolder.rotation.set(
-                this.weaponRecoil * 1.15 - reloadDip * 1.35 - drawDrop * 1.2 - (buildMode ? 0.45 : 0) - speedTilt * 0.06,
-                reloadYaw + speedTilt * 0.12,
-                this.strafeRoll + this.weaponRecoilRoll + (slideTimer > 0 ? -0.24 : 0) + reloadRoll
+                this.weaponRecoil * 1.15 - reloadDip * 1.35 - drawDrop * 1.2 - (buildMode ? 0.45 : 0) - speedTilt * (isAiming ? 0 : 0.06),
+                reloadYaw + speedTilt * (isAiming ? 0 : 0.12),
+                this.strafeRoll * (isAiming ? 0.2 : 1) + this.weaponRecoilRoll + (slideTimer > 0 ? -0.24 : 0) + reloadRoll
             );
 
             if (this.rifleBolt && curWeapon.id === 'rifle') {
                 this.rifleBolt.position.z = 0.02 + this.weaponRecoil * 1.2 + boltPull;
             }
-            if (this.shotgunPump && (this.shotgunPumpAnim > 0 || boltPull > 0)) {
+            if (this.awpBolt && curWeapon.id === 'awp_arctic') {
+                this.awpBolt.position.z = 0.04 + Math.sin(this.shotgunPumpAnim * Math.PI) * 0.09 + boltPull;
+            }
+            if (this.shotgunPump && curWeapon.id === 'shotgun' && (this.shotgunPumpAnim > 0 || boltPull > 0)) {
                 this.shotgunPumpAnim = Math.max(0, this.shotgunPumpAnim - dt * 2.8);
                 this.shotgunPump.position.z = -0.29 + Math.sin(this.shotgunPumpAnim * Math.PI) * 0.11 + boltPull;
+            } else if (this.shotgunPumpAnim > 0 && curWeapon.id !== 'shotgun') {
+                this.shotgunPumpAnim = Math.max(0, this.shotgunPumpAnim - dt * 2.2);
             }
             if (this.cryoDrum) {
                 this.cryoDrumAngle += (this.cryoDrumTarget - this.cryoDrumAngle) * Math.min(1, dt * 14);

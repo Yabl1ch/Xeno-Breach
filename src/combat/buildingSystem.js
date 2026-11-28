@@ -118,7 +118,7 @@
             if (!bp) return;
 
             let geo;
-            if (bp.id === 'ramp') {
+            if (bp.id === 'ramp' || bp.id === 'stairs_steep') {
                 geo = new THREE.BoxGeometry(bp.width, 0.36, Math.hypot(bp.depth, bp.height));
                 const m1 = new THREE.Mesh(geo, this.previewMat);
                 const m2 = new THREE.Mesh(geo, this.previewFillMat);
@@ -128,6 +128,16 @@
                 m1.position.y = bp.height * 0.5;
                 m2.position.y = bp.height * 0.5;
                 this.previewGroup.add(m1, m2);
+                return;
+            }
+            if (bp.id === 'hedgehog') {
+                for (let s = -1; s <= 1; s += 2) {
+                    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.28, 2.35, 0.28), this.previewMat);
+                    bar.position.y = 1.05;
+                    bar.rotation.z = s * 0.65;
+                    bar.rotation.x = s * 0.35;
+                    this.previewGroup.add(bar);
+                }
                 return;
             }
             if (bp.id === 'bunker_post') {
@@ -167,30 +177,56 @@
             if (flatFwd.lengthSq() < 0.001) flatFwd.set(0, 0, -1);
             flatFwd.normalize();
 
-            const dist = Math.max(4.6, Math.min(9.5, 6.8 - this._forward.y * 2.5));
+            const bp = XB.BUILD_BLUEPRINTS[this.selectedBlueprintIdx] || XB.BUILD_BLUEPRINTS[0];
+            let dist = Math.max(2.6, Math.min(9.5, 6.2 - this._forward.y * 2.5));
+
+            // Ray-check obstacles so aiming toward ANY arena wall or bunker snaps cleanly IN FRONT of the wall instead of clipping past bounds!
+            const probeStartY = playerPos.y + 1.5;
+            const obsHit = this.map.segmentHitsObstacle(
+                playerPos.x, probeStartY, playerPos.z,
+                playerPos.x + flatFwd.x * dist, probeStartY, playerPos.z + flatFwd.z * dist,
+                { expand: 0 }
+            );
+            if (obsHit.hit && obsHit.point) {
+                const hitDist = Math.hypot(obsHit.point.x - playerPos.x, obsHit.point.z - playerPos.z);
+                const wallOffset = bp.isTurret ? 0.95 : ((bp.depth || 1.0) * 0.52 + 0.35);
+                if (this._forward.y <= 0.16) {
+                    dist = Math.max(1.25, hitDist - wallOffset);
+                }
+            }
+
             const rawX = playerPos.x + flatFwd.x * dist;
             const rawZ = playerPos.z + flatFwd.z * dist;
 
-            const bp = XB.BUILD_BLUEPRINTS[this.selectedBlueprintIdx];
-            const snapSize = bp.isTurret ? 1.5 : 2.3;
-            const sx = Math.round(rawX / snapSize) * snapSize;
-            const sz = Math.round(rawZ / snapSize) * snapSize;
+            const snapSize = bp.isTurret ? 1.5 : 2.25;
+            const limitMargin = bp.isTurret ? 0.8 : 0.65;
+            const maxCoordX = this.map.ARENA_LIMIT_X - limitMargin;
+            const maxCoordZ = this.map.ARENA_LIMIT_Z - limitMargin;
+            let sx = Math.round(rawX / snapSize) * snapSize;
+            let sz = Math.round(rawZ / snapSize) * snapSize;
+            sx = Math.max(-maxCoordX, Math.min(maxCoordX, sx));
+            sz = Math.max(-maxCoordZ, Math.min(maxCoordZ, sz));
 
             const playerYawCard = Math.round(-Math.atan2(flatFwd.x, -flatFwd.z) / (Math.PI / 2));
             const rotIdx = ((playerYawCard + this.buildRotation) % 4 + 4) % 4;
             const rotY = rotIdx * (Math.PI / 2);
 
-            // Stack on elevated floor or existing wall top if aiming slightly high!
+            // Stack on elevated floor, ramp, or wall top smoothly (plus roof overhead elevation!)
             const probeY = playerPos.y + Math.max(0.2, this._forward.y * 4.0 + 0.6);
             let sy = this.map.getFloorHeightAt(sx, sz, probeY + 0.6);
-            if (!bp.isTurret && this._forward.y > 0.2) {
+            if (!bp.isTurret && (this._forward.y > 0.18 || bp.isFloorOrRoof)) {
                 for (const st of this.structures) {
-                    if (st.type !== 'ramp' && Math.hypot(st.x - sx, st.z - sz) < 2.2) {
-                        sy = Math.max(sy, st.y + st.height);
+                    if (st.type !== 'ramp' && st.type !== 'stairs_steep' && Math.hypot(st.x - sx, st.z - sz) < 3.6) {
+                        if (this._forward.y > 0.18 || bp.defaultElevate) {
+                            sy = Math.max(sy, st.y + st.height);
+                        }
                     }
                 }
             }
-            if (sy > 8.2) sy = 8.0;
+            if (bp.defaultElevate && sy < playerPos.y + bp.defaultElevate - 0.5) {
+                sy = playerPos.y + bp.defaultElevate;
+            }
+            if (sy > 8.6) sy = 8.4;
 
             return { x: sx, y: sy, z: sz, rotIdx, rotY };
         }
@@ -230,8 +266,9 @@
             this.previewGroup.rotation.y = pose.rotY;
             this.previewGroup.visible = true;
 
-            const insideBounds = Math.abs(pose.x) < this.map.ARENA_LIMIT_X - 3 && Math.abs(pose.z) < this.map.ARENA_LIMIT_Z - 3;
-            const farFromPlayer = Math.hypot(pose.x - playerPos.x, pose.z - playerPos.z) > 2.2;
+            const insideBounds = Math.abs(pose.x) <= this.map.ARENA_LIMIT_X - 0.5 && Math.abs(pose.z) <= this.map.ARENA_LIMIT_Z - 0.5;
+            const minPlayerDist = bp.isFloorOrRoof ? 0.0 : (bp.isTurret ? 1.1 : 1.0);
+            const farFromPlayer = Math.hypot(pose.x - playerPos.x, pose.z - playerPos.z) >= minPlayerDist;
             const canAfford = gameCtx.coins >= bp.costCoins && gameCtx.combat.polymerEnergy >= bp.costPoly;
             const turretRoom = !bp.isTurret || this.turrets.length < this.maxTurrets;
 
@@ -246,11 +283,12 @@
             if (!bp) return false;
 
             const pose = this._computePlacementPose(playerPos);
-            if (Math.abs(pose.x) >= this.map.ARENA_LIMIT_X - 3 || Math.abs(pose.z) >= this.map.ARENA_LIMIT_Z - 3) {
+            if (Math.abs(pose.x) > this.map.ARENA_LIMIT_X - 0.45 || Math.abs(pose.z) > this.map.ARENA_LIMIT_Z - 0.45) {
                 gameCtx.showToast('НЕЛЬЗЯ СТРОИТЬ ЗА ГРАНИЦЕЙ АРЕНЫ!', '#fb7185');
                 return false;
             }
-            if (Math.hypot(pose.x - playerPos.x, pose.z - playerPos.z) <= 1.8) {
+            const minPlayerDist = bp.isFloorOrRoof ? 0.0 : (bp.isTurret ? 1.1 : 1.0);
+            if (Math.hypot(pose.x - playerPos.x, pose.z - playerPos.z) < minPlayerDist) {
                 gameCtx.showToast('ОТОЙДИТЕ ЧУТЬ ДАЛЬШЕ ДЛЯ ПОСТРОЙКИ!', '#fb7185');
                 return false;
             }
@@ -331,14 +369,15 @@
                 boxes: [],
                 rampRef: null,
                 coverMeshes: [],
-                mountedTurret: null
+                mountedTurret: null,
+                isSpikeTrap: Boolean(bp.isSpikeTrap)
             };
 
             const rotated90 = (rotIdx % 2 === 1);
             const worldW = rotated90 ? bp.depth : bp.width;
             const worldD = rotated90 ? bp.width : bp.depth;
 
-            if (bp.id === 'ramp') {
+            if (bp.id === 'ramp' || bp.id === 'stairs_steep') {
                 const slopeLen = Math.hypot(bp.depth, bp.height);
                 const slopeAngle = Math.atan2(bp.height, bp.depth);
                 const deck = new THREE.Mesh(new THREE.BoxGeometry(bp.width, 0.34, slopeLen), baseMat);
@@ -361,14 +400,22 @@
                 supportR.position.x = bp.width / 2 - 0.2;
 
                 group.add(deck, railL, railR, supportL, supportR);
+
+                if (bp.id === 'stairs_steep') {
+                    // Add crisp visible stepped steel stair treads!
+                    const steps = 8;
+                    for (let st = 0; st < steps; st++) {
+                        const t = (st + 0.5) / steps;
+                        const tread = new THREE.Mesh(new THREE.BoxGeometry(bp.width - 0.35, 0.16, bp.depth / steps), frameMat);
+                        tread.position.set(0, t * bp.height, (0.5 - t) * bp.depth);
+                        group.add(tread);
+                    }
+                }
                 this.scene.add(group);
 
                 this.map.dynamicCoverMeshes.push(deck, supportL, supportR);
                 structObj.coverMeshes.push(deck, supportL, supportR);
 
-                // Register actual walkable ramp oriented smoothly across all 4 rotations!
-                // Note: rotIdx 0 (-Z is up/forward relative to player look? Wait: deck.rotation.x = +slopeAngle lifts -Z end UP!
-                // Wait: rotation.x > 0 rotates +Y -> +Z and -Z -> +Y! Let's verify: (0,0,-L/2) around X by +a goes to (0, +sin(a)*L/2, -cos(a)*L/2)! Yes, -Z is HIGH, +Z is LOW ('N' direction in MapBuilder!)
                 let dir = 'N';
                 if (rotIdx === 0) dir = 'N';
                 else if (rotIdx === 1) dir = 'W';
@@ -391,6 +438,137 @@
                 this.map.dynamicRamps.push(rampData);
                 structObj.rampRef = rampData;
                 this.structures.push(structObj);
+                return;
+            }
+
+            if (bp.id === 'floor_deck' || bp.id === 'roof_cap') {
+                const slab = new THREE.Mesh(new THREE.BoxGeometry(bp.width, bp.height, bp.depth), baseMat);
+                slab.position.y = bp.height / 2;
+                slab.castShadow = true;
+                slab.receiveShadow = true;
+                slab.userData.isCover = true;
+                slab.userData.craftedStructure = structObj;
+
+                const rim = new THREE.Mesh(new THREE.BoxGeometry(bp.width + 0.08, 0.1, bp.depth + 0.08), trimMat);
+                rim.position.y = bp.height * 0.5;
+                group.add(slab, rim);
+
+                // Diagonal steel support struts on edges
+                [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
+                    const brace = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.22, 0.28), frameMat);
+                    brace.position.set(sx * (bp.width / 2 - 0.22), 0.05, sz * (bp.depth / 2 - 0.22));
+                    group.add(brace);
+                });
+
+                this.map.dynamicCoverMeshes.push(slab);
+                structObj.coverMeshes.push(slab);
+
+                const box = {
+                    minX: x - worldW / 2,
+                    maxX: x + worldW / 2,
+                    minY: y,
+                    maxY: y + bp.height,
+                    minZ: z - worldD / 2,
+                    maxZ: z + worldD / 2,
+                    jumpable: true,
+                    navSolid: (y < 1.5 && bp.id === 'floor_deck' && bp.height > 1.0), // Walkable above & passable underneath roofs!
+                    structureRef: structObj
+                };
+                this.map.dynamicBoxes.push(box);
+                structObj.boxes.push(box);
+                this.scene.add(group);
+                this.structures.push(structObj);
+                this.map.refreshNavWithDynamics();
+                return;
+            }
+
+            if (bp.id === 'hedgehog') {
+                // Iconic Czech Anti-Tank X-Hedgehog with Glowing Electric Razor Coils!
+                const beamGeo = new THREE.BoxGeometry(0.28, 2.75, 0.28);
+                [
+                    { rx: 0.62, rz: 0.62 },
+                    { rx: -0.62, rz: 0.62 },
+                    { rx: 0, rz: -0.78 }
+                ].forEach(ang => {
+                    const b = new THREE.Mesh(beamGeo, frameMat);
+                    b.position.y = 1.05;
+                    b.rotation.set(ang.rx, 0, ang.rz);
+                    b.castShadow = true;
+                    b.userData.isCover = true;
+                    b.userData.craftedStructure = structObj;
+                    group.add(b);
+                    this.map.dynamicCoverMeshes.push(b);
+                    structObj.coverMeshes.push(b);
+                });
+                const shockRing = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.06, 6, 16), trimMat);
+                shockRing.rotation.x = Math.PI / 2;
+                shockRing.position.y = 1.05;
+                group.add(shockRing);
+
+                const box = {
+                    minX: x - worldW / 2,
+                    maxX: x + worldW / 2,
+                    minY: y,
+                    maxY: y + bp.height,
+                    minZ: z - worldD / 2,
+                    maxZ: z + worldD / 2,
+                    jumpable: true,
+                    navSolid: true,
+                    structureRef: structObj
+                };
+                this.map.dynamicBoxes.push(box);
+                structObj.boxes.push(box);
+                this.scene.add(group);
+                this.structures.push(structObj);
+                this.map.refreshNavWithDynamics();
+                return;
+            }
+
+            if (bp.id === 'laser_gate') {
+                // Passable Laser Barrier Gate: Players walk & shoot freely through, while blocking & damaging robots!
+                const postL = new THREE.Mesh(new THREE.BoxGeometry(0.45, bp.height, bp.depth + 0.15), frameMat);
+                postL.position.set(-bp.width / 2 + 0.22, bp.height / 2, 0);
+                const postR = postL.clone();
+                postR.position.x = bp.width / 2 - 0.22;
+                const topHeader = new THREE.Mesh(new THREE.BoxGeometry(bp.width, 0.45, bp.depth), frameMat);
+                topHeader.position.y = bp.height - 0.22;
+                group.add(postL, postR, topHeader);
+
+                const laserMat = new THREE.MeshBasicMaterial({ color: bp.color, transparent: true, opacity: 0.48 });
+                for (let lx = -1.6; lx <= 1.6; lx += 0.8) {
+                    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, bp.height - 0.5, 8), laserMat);
+                    bar.position.set(lx, bp.height / 2 - 0.1, 0);
+                    group.add(bar);
+                }
+                const curtain = new THREE.Mesh(new THREE.PlaneGeometry(bp.width - 0.8, bp.height - 0.5), new THREE.MeshBasicMaterial({ color: bp.color, transparent: true, opacity: 0.16, side: 2 }));
+                curtain.position.y = bp.height / 2 - 0.1;
+                group.add(curtain);
+
+                [postL, postR, topHeader].forEach(m => {
+                    m.castShadow = true;
+                    m.userData.isCover = true;
+                    m.userData.craftedStructure = structObj;
+                    this.map.dynamicCoverMeshes.push(m);
+                    structObj.coverMeshes.push(m);
+                });
+
+                const box = {
+                    minX: x - worldW / 2,
+                    maxX: x + worldW / 2,
+                    minY: y,
+                    maxY: y + bp.height,
+                    minZ: z - worldD / 2,
+                    maxZ: z + worldD / 2,
+                    jumpable: false,
+                    navSolid: true,
+                    playerPassable: true,
+                    structureRef: structObj
+                };
+                this.map.dynamicBoxes.push(box);
+                structObj.boxes.push(box);
+                this.scene.add(group);
+                this.structures.push(structObj);
+                this.map.refreshNavWithDynamics();
                 return;
             }
 
@@ -647,18 +825,52 @@
             if (!struct || struct.hp <= 0) return false;
             struct.hp -= damage;
 
-            if (attacker && struct.attachments.has('shock_spikes')) {
+            if (attacker && (struct.attachments.has('shock_spikes') || struct.isSpikeTrap)) {
                 attacker.shockTimer = Math.max(attacker.shockTimer, 1.8);
                 const hitPt = attacker.group.position.clone().add(new THREE.Vector3(0, 1.4, 0));
+                const spikeDmg = struct.attachments.has('shock_spikes') ? 42 : 32;
                 if (typeof combatCtx.onDamageAlien === 'function') {
-                    combatCtx.onDamageAlien(attacker, 42, hitPt, 0x38bdf8, false);
+                    combatCtx.onDamageAlien(attacker, spikeDmg, hitPt, 0x38bdf8, false);
                 } else if (combatCtx.combat && typeof combatCtx.combat.damageAlien === 'function') {
-                    combatCtx.combat.damageAlien(attacker, 42, hitPt, 0x38bdf8, false, 1.75, combatCtx);
+                    combatCtx.combat.damageAlien(attacker, spikeDmg, hitPt, 0x38bdf8, false, 1.75, combatCtx);
                 }
             }
 
             if (struct.hp <= 0) {
                 this._destroyStructure(struct);
+                return true;
+            }
+            return false;
+        }
+
+        damageTurret(turret, damage, attacker, combatCtx) {
+            if (!turret || turret.hp <= 0) return false;
+            turret.hp -= damage;
+            if (turret.hpFill && turret.maxHp > 0) {
+                const ratio = Math.max(0.02, turret.hp / turret.maxHp);
+                turret.hpFill.scale.set(ratio, 1, 1);
+                turret.hpFill.material.color.setHex(ratio < 0.4 ? 0xf43f5e : (turret.isGatling ? 0xf97316 : 0x4ade80));
+            }
+            if (combatCtx && combatCtx.spawnParticles) {
+                combatCtx.spawnParticles(new THREE.Vector3(turret.x, turret.y + 1.25, turret.z), 0xfacc15, 4, 5);
+            }
+            if (turret.hp <= 0) {
+                if (combatCtx && combatCtx.spawnParticles) {
+                    combatCtx.spawnParticles(new THREE.Vector3(turret.x, turret.y + 1.1, turret.z), turret.color, 18, 10);
+                }
+                if (combatCtx && combatCtx.spawnShockwave) {
+                    combatCtx.spawnShockwave(new THREE.Vector3(turret.x, turret.y + 1.0, turret.z), 4.5, turret.color, 0.3);
+                }
+                this.sound.playExplosion();
+                if (turret.box) {
+                    this.map.dynamicBoxes = this.map.dynamicBoxes.filter(b => b !== turret.box);
+                }
+                const ti = this.turrets.indexOf(turret);
+                if (ti !== -1) this.turrets.splice(ti, 1);
+                this.scene.remove(turret.group);
+                if (combatCtx && combatCtx.showToast) {
+                    combatCtx.showToast(`ТУРЕЛЬ РАЗРУШЕНА РОБОТАМИ!`, '#fb7185');
+                }
                 return true;
             }
             return false;
@@ -783,6 +995,20 @@
             }
 
             if (isMini) group.scale.setScalar(0.84);
+
+            // Overhead 3D Health Bar so players see when robots attack their Gatlings!
+            const hpBg = new THREE.Mesh(
+                new THREE.BoxGeometry(1.15, 0.11, 0.08),
+                new THREE.MeshBasicMaterial({ color: 0x09130f })
+            );
+            hpBg.position.set(0, 2.05, 0);
+            const hpFill = new THREE.Mesh(
+                new THREE.BoxGeometry(1.08, 0.08, 0.1),
+                new THREE.MeshBasicMaterial({ color: isGatling ? 0xf97316 : 0x4ade80 })
+            );
+            hpFill.position.set(0, 2.05, 0);
+            group.add(hpBg, hpFill);
+
             this.scene.add(group);
 
             const dmg = customStats ? customStats.damage : (isGatling ? (isMini ? 22 : 30) : 34);
@@ -796,9 +1022,11 @@
                 group,
                 headPivot,
                 barrelCluster,
+                hpFill,
                 x,
                 y,
                 z,
+                pos: new THREE.Vector3(x, y, z),
                 hp: isGatling ? 980 : 420,
                 maxHp: isGatling ? 980 : 420,
                 life: permanent ? Infinity : duration,
@@ -809,8 +1037,20 @@
                 range,
                 spinVel: 0,
                 recoilOffset: 0,
-                color: isGatling ? 0xf97316 : 0x4ade80
+                color: isGatling ? 0xf97316 : 0x4ade80,
+                box: null
             };
+
+            // Register soft turret collision against robots (robots must walk around or break the turret!)
+            const tBox = {
+                minX: x - 0.85, maxX: x + 0.85,
+                minY: y, maxY: y + 1.9,
+                minZ: z - 0.85, maxZ: z + 0.85,
+                jumpable: false, navSolid: true, isTurretBox: true,
+                turretRef: tObj
+            };
+            tObj.box = tBox;
+            this.map.dynamicBoxes.push(tBox);
 
             // Respect max temporary turret cap without ever evicting permanent Coin-built Gatlings!
             const maxAllowed = this.maxTurrets + 2;
@@ -833,6 +1073,7 @@
                 }
                 if ((!t.permanent && t.life <= 0) || t.hp <= 0) {
                     combat._spawnParticles(new THREE.Vector3(t.x, t.y + 1.0, t.z), t.color, 12, 8);
+                    if (t.box) this.map.dynamicBoxes = this.map.dynamicBoxes.filter(b => b !== t.box);
                     this.scene.remove(t.group);
                     this.turrets.splice(i, 1);
                     continue;
@@ -878,6 +1119,10 @@
                         combat._spawnTracer(muzzleWorld, aCenter, t.color, t.isGatling ? 0.045 : 0.075);
                         if (!t.isGatling) {
                             target.shockTimer = Math.max(target.shockTimer, 0.45);
+                        }
+                        // Robot remembers the "troll" Gatling turret shooting it and may try to destroy it!
+                        if (!target.aggroTurret || target.aggroTurret.hp <= 0) {
+                            target.aggroTurret = t;
                         }
                         combat.damageAlien(target, t.damage, aCenter, t.color, false, 1.75, gameCtx);
                         if (headOrigin.distanceTo(gameCtx.playerPos) < 42) {

@@ -517,7 +517,7 @@
             // Check 3D Boxes (static + player-crafted walls, supporting underpasses & BHop auto step-up!)
             const processBoxList = (boxList) => {
                 for (const b of boxList) {
-                    if (b.isShieldScreen) continue;
+                    if (b.isShieldScreen || b.playerPassable || b.isTurretBox) continue;
                     const closestX = Math.max(b.minX, Math.min(pos.x, b.maxX));
                     const closestZ = Math.max(b.minZ, Math.min(pos.z, b.maxZ));
                     const dx = pos.x - closestX;
