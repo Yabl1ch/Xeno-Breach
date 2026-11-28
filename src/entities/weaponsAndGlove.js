@@ -473,6 +473,22 @@
                 };
             });
 
+            if (XB.Assets && typeof XB.Assets.instantiateWeapon === 'function') {
+                const keepFx = new Set([this.polyCoreOrb, ...this.polyRings, this.flamerPilot, this.chargeOrbMesh, ...this.chargeFins, this.teslaTip]);
+                XB.WEAPONS.forEach((w, idx) => {
+                    const wg = this.weaponMeshes[idx];
+                    if (!wg || !XB.Assets.WEAPON_MODELS[w.id]) return;
+                    const att = this.weaponAttGroups[idx];
+                    const attSet = new Set([att.barrel, att.mag, att.optic, att.core]);
+                    const procParts = wg.children.filter(c => !attSet.has(c) && !keepFx.has(c));
+                    XB.Assets.instantiateWeapon(w.id).then((glbGroup) => {
+                        if (!glbGroup) return;
+                        procParts.forEach(p => { p.visible = false; });
+                        wg.add(glbGroup);
+                    });
+                });
+            }
+
             this.muzzleFlash = new THREE.Mesh(
                 new THREE.OctahedronGeometry(0.16, 0),
                 new THREE.MeshBasicMaterial({ color: 0x86efac, transparent: true, opacity: 0.92 })

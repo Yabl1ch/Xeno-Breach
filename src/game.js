@@ -88,6 +88,9 @@
                 : 4;
             this.map = new XB.MapBuilder(this.scene, maxAniso);
             this.map.build();
+            if (XB.Assets && typeof XB.Assets.preloadAll === 'function') {
+                XB.Assets.preloadAll();
+            }
 
             this.player = new XB.PlayerController(this.map, this.sound);
             this.vm = new XB.ViewModelRig(this.camera);

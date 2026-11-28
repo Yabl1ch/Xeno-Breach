@@ -143,6 +143,15 @@
                 metalness: 0.54
             });
 
+            if (XB.Assets && typeof XB.Assets.applyExternalPBRToMaterial === 'function') {
+                XB.Assets.applyExternalPBRToMaterial(floorMat, 'floor', 42, 42, { maxAniso: aniso, normalScale: 0.9, tintHex: 0xa4d9bc });
+                XB.Assets.applyExternalPBRToMaterial(wallMat, 'wall', 12, 1, { maxAniso: aniso, normalScale: 1.15, tintHex: 0x86c9a5 });
+                XB.Assets.applyExternalPBRToMaterial(structMat, 'struct', 2, 2, { maxAniso: aniso, normalScale: 1.0, tintHex: 0x72b091 });
+                XB.Assets.applyExternalPBRToMaterial(bunkerMat, 'bunker', 2, 2, { maxAniso: aniso, normalScale: 1.2, tintHex: 0x9ac2ab });
+                XB.Assets.applyExternalPBRToMaterial(darkSteelMat, 'floor', 3, 2, { maxAniso: aniso, normalScale: 0.85, tintHex: 0x456b58 });
+                XB.Assets.applyExternalPBRToMaterial(bridgeMat, 'grate', 6, 2, { maxAniso: aniso, normalScale: 1.0, tintHex: 0x88b89f });
+            }
+
             // Main floor
             const floor = new THREE.Mesh(new THREE.PlaneGeometry(196, 212), floorMat);
             floor.rotation.x = -Math.PI / 2;

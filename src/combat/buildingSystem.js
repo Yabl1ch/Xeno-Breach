@@ -940,6 +940,8 @@
             const headPivot = new THREE.Group();
             headPivot.position.y = 1.24;
             group.add(headPivot);
+            const glbHeadPivot = new THREE.Group();
+            group.add(glbHeadPivot);
 
             const housing = new THREE.Mesh(new THREE.BoxGeometry(isGatling ? 0.7 : 0.56, 0.44, 0.72), bodyMat);
             const opticEye = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), glowMat);
@@ -1021,6 +1023,8 @@
                 permanent,
                 group,
                 headPivot,
+                glbHeadPivot,
+                glbTopObj: null,
                 barrelCluster,
                 hpFill,
                 x,
@@ -1040,6 +1044,20 @@
                 color: isGatling ? 0xf97316 : 0x4ade80,
                 box: null
             };
+
+            if (XB.Assets && typeof XB.Assets.instantiateTurret === 'function') {
+                const procKeep = new Set([hpBg, hpFill, glbHeadPivot]);
+                const procParts = group.children.filter(c => !procKeep.has(c));
+                XB.Assets.instantiateTurret(isGatling ? 'gatling' : 'polymer').then((res) => {
+                    if (!res || tObj.hp <= 0) return;
+                    procParts.forEach(p => { p.visible = false; });
+                    if (res.baseObj) group.add(res.baseObj);
+                    if (res.topObj) {
+                        glbHeadPivot.add(res.topObj);
+                        tObj.glbTopObj = res.topObj;
+                    }
+                });
+            }
 
             // Register soft turret collision against robots (robots must walk around or break the turret!)
             const tBox = {
@@ -1137,6 +1155,13 @@
 
                 if (t.recoilOffset > 0) {
                     t.recoilOffset = Math.max(0, t.recoilOffset - dt * 1.1);
+                }
+                if (t.glbHeadPivot) {
+                    t.glbHeadPivot.rotation.y = t.headPivot.rotation.y;
+                    t.glbHeadPivot.rotation.x = t.headPivot.rotation.x;
+                }
+                if (t.glbTopObj) {
+                    t.glbTopObj.position.z = -t.recoilOffset * 1.4;
                 }
                 if (t.barrelCluster) {
                     t.barrelCluster.position.z = (t.isGatling ? 0.85 : 0.56) - t.recoilOffset;

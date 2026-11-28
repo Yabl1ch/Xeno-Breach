@@ -507,13 +507,127 @@
                 lastStepSign: 1
             };
 
+            // Fast pose-independent raycast hitboxes + persistent shield overlay for GLB robots
+            const hitBoxMat = new THREE.MeshBasicMaterial({
+                colorWrite: false,
+                depthWrite: false,
+                transparent: true,
+                opacity: 0
+            });
+            const yFlyOff = (type === 'leaper' || type === 'sniper') ? 0.65 : 0;
+            const hitBody = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.42, 1.44, 8), hitBoxMat);
+            hitBody.position.set(0, 0.82 + yFlyOff, 0);
+            hitBody.userData.hitPart = 'body';
+            const hitHead = new THREE.Mesh(new THREE.SphereGeometry(0.38, 8, 6), hitBoxMat);
+            hitHead.position.set(0, 1.88 + yFlyOff, 0.04);
+            hitHead.userData.hitPart = 'head';
+            group.add(hitBody, hitHead);
+
+            let shieldProxy = null;
+            if (type === 'shieldbearer') {
+                shieldProxy = new THREE.Group();
+                shieldProxy.visible = false;
+                const spFrame = new THREE.Mesh(new THREE.BoxGeometry(1.12, 1.76, 0.12), armorMat);
+                spFrame.position.set(-0.62, 1.15, 0.56);
+                spFrame.userData.isEnemyShield = true;
+                const spEnergy = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.96, 1.54, 0.14),
+                    new THREE.MeshBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.58 })
+                );
+                spEnergy.position.copy(spFrame.position);
+                spEnergy.userData.isEnemyShield = true;
+                shieldProxy.add(spFrame, spEnergy);
+                group.add(shieldProxy);
+            }
+
             group.traverse(child => {
                 if (child.isMesh) child.userData.alien = alienObj;
             });
+            alienObj.shieldProxy = shieldProxy;
+            alienObj.glb = null;
+
+            if (XB.Assets && typeof XB.Assets.instantiateEnemy === 'function') {
+                XB.Assets.instantiateEnemy(type).then((res) => {
+                    if (!res || !res.visualRoot || alienObj.dying || alienObj.hp <= 0) return;
+                    res.visualRoot.traverse((m) => {
+                        if (m.isMesh) {
+                            m.raycast = () => {};
+                        }
+                    });
+                    group.add(res.visualRoot);
+                    hipPivot.visible = false;
+                    if (shieldProxy) shieldProxy.visible = true;
+
+                    const mixer = (typeof THREE.AnimationMixer === 'function')
+                        ? new THREE.AnimationMixer(res.visualRoot)
+                        : null;
+                    const actions = {};
+                    if (mixer && THREE.AnimationClip && res.animations.length > 0) {
+                        for (const [slot, names] of Object.entries(res.clipMap || {})) {
+                            for (const clipName of names) {
+                                const clip = THREE.AnimationClip.findByName(res.animations, clipName);
+                                if (clip) {
+                                    const act = mixer.clipAction(clip);
+                                    if (slot === 'death' && typeof THREE.LoopOnce !== 'undefined') {
+                                        act.setLoop(THREE.LoopOnce, 1);
+                                        act.clampWhenFinished = true;
+                                    }
+                                    actions[slot] = act;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    alienObj.glb = {
+                        root: res.visualRoot,
+                        mixer,
+                        actions,
+                        activeKey: null,
+                        activeAction: null,
+                        deathStarted: false,
+                        materialStates: res.materialStates || []
+                    };
+                    this._playGlbAnim(alienObj, 'move', 0);
+                });
+            }
 
             this.scene.add(group);
             this.aliens.push(alienObj);
             return alienObj;
+        }
+
+        _playGlbAnim(a, key, fadeDur = 0.14) {
+            if (!a.glb || !a.glb.mixer) return;
+            const actions = a.glb.actions;
+            const targetKey = actions[key] ? key : (key === 'move' && actions.idle ? 'idle' : (actions.move ? 'move' : Object.keys(actions)[0]));
+            if (!targetKey || a.glb.activeKey === targetKey) return;
+            const nextAct = actions[targetKey];
+            if (!nextAct) return;
+            if (a.glb.activeAction && fadeDur > 0) {
+                a.glb.activeAction.fadeOut(fadeDur);
+            }
+            nextAct.reset();
+            if (fadeDur > 0) nextAct.fadeIn(fadeDur);
+            nextAct.play();
+            a.glb.activeAction = nextAct;
+            a.glb.activeKey = targetKey;
+        }
+
+        _setAlienEmissive(a, hex, intensity, restoreBase = false) {
+            a.skinMat.emissive.setHex(hex);
+            a.skinMat.emissiveIntensity = intensity;
+            if (a.glb && a.glb.materialStates) {
+                for (const ms of a.glb.materialStates) {
+                    if (!ms.mat || !ms.mat.emissive) continue;
+                    if (restoreBase) {
+                        ms.mat.emissive.setHex(ms.emissiveHex);
+                        ms.mat.emissiveIntensity = ms.emissiveIntensity;
+                    } else {
+                        ms.mat.emissive.setHex(hex);
+                        ms.mat.emissiveIntensity = Math.min(1.4, intensity * 0.65);
+                    }
+                }
+            }
         }
 
         update(rawDt, playerPos, playerVel, combatCtx) {
@@ -539,16 +653,25 @@
                 // 1. Kinetic Mechanical Death Disassembly Animation
                 if (a.dying) {
                     if (a.laserLine) a.laserLine.visible = false;
+                    if (a.shieldProxy) a.shieldProxy.visible = false;
                     a.deathTimer -= rawDt;
                     const p = Math.min(1, Math.max(0, 1 - a.deathTimer / 0.65));
-                    a.torsoPivot.rotation.x = a.baseLean + p * 1.55;
-                    a.torsoPivot.rotation.z += a.deathSpinDir * rawDt * 2.2;
-                    a.hipPivot.position.y = Math.max(0.18, 1.08 - p * 0.94);
-                    a.headGroup.position.y += rawDt * (3.6 - p * 5.2);
-                    a.headGroup.position.x += a.deathSpinDir * rawDt * 1.3;
-                    a.headGroup.rotation.z += a.deathSpinDir * rawDt * 8.5;
-                    a.armL.rotation.x -= rawDt * 3.8;
-                    a.armR.rotation.x += rawDt * 3.4;
+                    if (a.glb && a.glb.mixer) {
+                        if (!a.glb.deathStarted) {
+                            a.glb.deathStarted = true;
+                            this._playGlbAnim(a, 'death', 0.08);
+                        }
+                        a.glb.mixer.update(rawDt * 1.4);
+                    } else {
+                        a.torsoPivot.rotation.x = a.baseLean + p * 1.55;
+                        a.torsoPivot.rotation.z += a.deathSpinDir * rawDt * 2.2;
+                        a.hipPivot.position.y = Math.max(0.18, 1.08 - p * 0.94);
+                        a.headGroup.position.y += rawDt * (3.6 - p * 5.2);
+                        a.headGroup.position.x += a.deathSpinDir * rawDt * 1.3;
+                        a.headGroup.rotation.z += a.deathSpinDir * rawDt * 8.5;
+                        a.armL.rotation.x -= rawDt * 3.8;
+                        a.armR.rotation.x += rawDt * 3.4;
+                    }
                     if (p > 0.35 && !a.deathBurstDone) {
                         a.deathBurstDone = true;
                         spawnParticles(pos.clone().add(new THREE.Vector3(0, 1.1, 0)), 0xf97316, 10, 8);
@@ -567,12 +690,12 @@
 
                 // 2. Time Stop (0.0x)
                 if (timeStopActive) {
-                    a.skinMat.emissive.setHex(0xfacc15);
-                    a.skinMat.emissiveIntensity = 0.42;
+                    let intens = 0.42;
                     if (a.hitFlash > 0) {
                         a.hitFlash -= rawDt;
-                        a.skinMat.emissiveIntensity = 1.6;
+                        intens = 1.6;
                     }
+                    this._setAlienEmissive(a, 0xfacc15, intens);
                     continue;
                 }
 
@@ -624,16 +747,15 @@
                     a.freezeTimer -= dt;
                     if (a.laserLine) a.laserLine.visible = false;
                     a.iceShell.visible = true;
-                    a.skinMat.emissive.setHex(0x67e8f9);
-                    a.skinMat.emissiveIntensity = 0.65;
+                    let fInt = 0.65;
                     if (a.hitFlash > 0) {
                         a.hitFlash -= rawDt;
-                        a.skinMat.emissiveIntensity = 1.6;
+                        fInt = 1.6;
                     }
+                    this._setAlienEmissive(a, 0x67e8f9, fInt);
                     if (a.freezeTimer <= 0) {
                         a.iceShell.visible = false;
-                        a.skinMat.emissive.setHex(a.cfg.bodyColor);
-                        a.skinMat.emissiveIntensity = a.baseEmissive;
+                        this._setAlienEmissive(a, a.cfg.bodyColor, a.baseEmissive, true);
                     }
                     continue;
                 } else if (a.iceShell.visible) {
@@ -650,8 +772,7 @@
                 if (a.burnTimer > 0) {
                     a.burnTimer -= dt;
                     a.burnTick += dt;
-                    a.skinMat.emissive.setHex(0xff5722);
-                    a.skinMat.emissiveIntensity = 0.85;
+                    this._setAlienEmissive(a, 0xff5722, 0.85);
                     if (a.burnTick >= 0.35) {
                         a.burnTick = 0;
                         const center = pos.clone().add(new THREE.Vector3(0, 1.4, 0));
@@ -660,18 +781,19 @@
                         if (killed) continue;
                     }
                     if (a.burnTimer <= 0) {
-                        a.skinMat.emissive.setHex(a.cfg.bodyColor);
-                        a.skinMat.emissiveIntensity = a.baseEmissive;
+                        this._setAlienEmissive(a, a.cfg.bodyColor, a.baseEmissive, true);
                     }
                 } else if (a.hitFlash > 0) {
                     a.hitFlash -= rawDt;
-                    a.skinMat.emissiveIntensity = a.hitFlash > 0 ? 1.5 : a.baseEmissive;
+                    if (a.hitFlash > 0) {
+                        this._setAlienEmissive(a, a.cfg.bodyColor, 1.5);
+                    } else {
+                        this._setAlienEmissive(a, a.cfg.bodyColor, a.baseEmissive, true);
+                    }
                 } else if (timeSlowActive) {
-                    a.skinMat.emissive.setHex(0x6ee7b7);
-                    a.skinMat.emissiveIntensity = 0.28;
+                    this._setAlienEmissive(a, 0x6ee7b7, 0.28);
                 } else {
-                    a.skinMat.emissive.setHex(a.cfg.bodyColor);
-                    a.skinMat.emissiveIntensity = a.baseEmissive;
+                    this._setAlienEmissive(a, a.cfg.bodyColor, a.baseEmissive, true);
                 }
 
                 if (a.bossRing) a.bossRing.rotation.z += dt * 2.2;
@@ -951,6 +1073,30 @@
 
             const flinchBack = a.flinchTimer > 0 ? -Math.sin((a.flinchTimer / 0.16) * Math.PI) * 0.28 : 0;
             const strikeFwd = a.attackWindup > 0 ? Math.sin((a.attackWindup / 0.28) * Math.PI) * 0.45 : 0;
+
+            if (a.glb && a.glb.mixer) {
+                const animState = (a.meleeChargeWindup > 0 || a.attackWindup > 0 || a.sniperAimTimer > 0)
+                    ? 'attack'
+                    : (moving || a.inAir ? 'move' : 'idle');
+                this._playGlbAnim(a, animState, 0.14);
+                const pace = animState === 'move' ? (slowMult * (a.type === 'scout' ? 1.28 : 1.05)) : slowMult;
+                a.glb.mixer.update(dt * pace);
+                a.glb.root.rotation.x = flinchBack * 0.45;
+
+                if (moving && (a.type === 'brute' || a.type === 'overlord')) {
+                    a.walkPhase += dt * a.strideFreq * slowMult;
+                    const stepSign = Math.sin(a.walkPhase) >= 0 ? 1 : -1;
+                    if (stepSign !== a.lastStepSign) {
+                        a.lastStepSign = stepSign;
+                        if (distToPlayer < 34) {
+                            const prox = 1 - distToPlayer / 34;
+                            this.sound.playGiantStomp(prox);
+                            XB.events.emit('camera:shake', { intensity: prox * 0.12 });
+                        }
+                    }
+                }
+                return;
+            }
 
             if (a.inAir) {
                 a.legL.legPivot.rotation.x = 0.65;
