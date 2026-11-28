@@ -60,10 +60,38 @@
             }
             this.aliens = [];
             for (const b of this.enemyBullets) {
-                if (b.ringMesh) this.scene.remove(b.ringMesh);
-                this.scene.remove(b.mesh);
+                this.releaseEnemyBullet(b);
             }
             this.enemyBullets = [];
+        }
+
+        releaseEnemyBullet(b) {
+            if (!b) return;
+            if (b.isGrenade) {
+                if (b.mesh) b.mesh.visible = false;
+                if (b.ringMesh) b.ringMesh.visible = false;
+                if (!this._freeGrenades) this._freeGrenades = [];
+                if (this._freeGrenades.length < 24) {
+                    this._freeGrenades.push(b);
+                } else {
+                    if (b.ringMesh) this.scene.remove(b.ringMesh);
+                    if (b.mesh) this.scene.remove(b.mesh);
+                }
+                return;
+            }
+            if (b.mesh) b.mesh.visible = false;
+            if (!this._bulletPools) this._bulletPools = new Map();
+            const key = b._poolKey || 'default';
+            let pool = this._bulletPools.get(key);
+            if (!pool) {
+                pool = [];
+                this._bulletPools.set(key, pool);
+            }
+            if (pool.length < 96 && b._pooledMesh) {
+                pool.push(b.mesh);
+            } else if (b.mesh) {
+                this.scene.remove(b.mesh);
+            }
         }
 
         getAliveCount() {
@@ -76,9 +104,11 @@
 
         spawnAlien(type, waveNum, door) {
             const base = XB.ENEMY_TYPES[type] || XB.ENEMY_TYPES.scout;
-            const hp = Math.round(base.hpBase + waveNum * base.hpPerWave);
+            const lateWave = Math.max(0, waveNum - 6);
+            const hpScale = 1 + lateWave * 0.075;
+            const hp = Math.round((base.hpBase + waveNum * base.hpPerWave) * hpScale);
             const speed = base.speed + Math.min(waveNum * 0.25, base.speedMaxBonus);
-            const scaledDamage = Math.round(base.damage * (1 + Math.min(1.6, Math.max(0, waveNum - 1) * 0.085)));
+            const scaledDamage = Math.round(base.damage * (1 + Math.max(0, waveNum - 1) * 0.11 + lateWave * 0.055));
 
             const group = new THREE.Group();
             const hipPivot = new THREE.Group();
@@ -121,7 +151,7 @@
 
             // Multi-Segment Articulated Cyber-Tail for Agile Stalkers
             let tailPivot = null;
-            if (type === 'scout' || type === 'leaper') {
+            if (type === 'scout' || type === 'leaper' || type === 'turret_killer') {
                 tailPivot = new THREE.Group();
                 tailPivot.position.set(0, 0.06, -0.22);
                 const t1 = new THREE.Mesh(this._getGeo('tail1', () => new THREE.CylinderGeometry(0.06, 0.08, 0.44, 6)), armorMat);
@@ -147,13 +177,13 @@
             torsoPivot.add(abdomen);
 
             // Layered Industrial Carapace Chassis + Reactive Armor Plates
-            const isHeavyFrame = (type === 'brute' || type === 'overlord');
-            const isShieldFrame = (type === 'shieldbearer');
+            const isHeavyFrame = (type === 'brute' || type === 'overlord' || type === 'heavy_gunner' || type === 'dreadnought');
+            const isShieldFrame = Boolean(base.hasFrontShield);
             const chestKey = isHeavyFrame ? 'heavy' : (isShieldFrame ? 'shield' : 'std');
             const chestW = isHeavyFrame ? 1.18 : (isShieldFrame ? 0.92 : 0.72);
             const chest = new THREE.Mesh(this._getGeo('chest_' + chestKey, () => new THREE.BoxGeometry(chestW, 0.62, 0.48)), armorMat);
             chest.position.y = 0.58;
-            chest.castShadow = true;
+            chest.castShadow = (isHeavyFrame || isShieldFrame || base.isBoss || type === 'gunner');
             chest.userData.hitPart = 'body';
             torsoPivot.add(chest);
 
@@ -184,7 +214,7 @@
                 torsoPivot.add(collar, vent);
             });
 
-            // Dorsal Reactor / Spine Vertebrae / Mortar Tube / Exhaust Stacks
+            // Dorsal Reactor / Spine Vertebrae / Mortar / Fuel Tanks / Ammo Hopper
             const spinePack = new THREE.Mesh(this._getGeo('spine_' + chestKey, () => new THREE.BoxGeometry(chestW * 0.56, 0.56, 0.3)), skinMat);
             spinePack.position.set(0, 0.58, -0.32);
             spinePack.userData.hitPart = 'body';
@@ -211,7 +241,7 @@
             }
 
             let ammoDrum = null;
-            if (type === 'grenadier') {
+            if (type === 'grenadier' || type === 'dreadnought') {
                 const mortar = new THREE.Mesh(this._getGeo('mortar', () => new THREE.CylinderGeometry(0.18, 0.21, 0.82, 12)), armorMat);
                 mortar.position.set(0, 0.98, -0.26);
                 mortar.rotation.x = -0.38;
@@ -228,8 +258,47 @@
                 torsoPivot.add(mortar, mRim, ammoDrum, mast, sensor);
             }
 
+            if (base.isGunner) {
+                const hopper = new THREE.Mesh(this._getGeo('mgHopper', () => new THREE.BoxGeometry(0.46, 0.50, 0.34)), armorTrimMat);
+                hopper.position.set(0, 0.58, -0.42);
+                const belt = new THREE.Mesh(this._getGeo('mgBelt', () => new THREE.BoxGeometry(0.56, 0.12, 0.12)), eyeMat);
+                belt.position.set(0.24, 0.52, -0.22);
+                torsoPivot.add(hopper, belt);
+            }
+
+            if (base.isCryoUnit || base.isPyroUnit) {
+                const tankGeo = this._getGeo('elemTank', () => new THREE.CylinderGeometry(0.11, 0.11, 0.62, 8));
+                const capGeo = this._getGeo('elemCap', () => new THREE.SphereGeometry(0.11, 8, 6));
+                [-0.20, 0.20].forEach(tx => {
+                    const tank = new THREE.Mesh(tankGeo, eyeMat);
+                    tank.position.set(tx, 0.64, -0.44);
+                    const cap = new THREE.Mesh(capGeo, servoMat);
+                    cap.position.set(tx, 0.95, -0.44);
+                    torsoPivot.add(tank, cap);
+                });
+            }
+
+            if (type === 'turret_killer') {
+                const pylonGeo = this._getGeo('empPylon', () => new THREE.CylinderGeometry(0.06, 0.09, 0.65, 8));
+                [-0.36, 0.36].forEach(px => {
+                    const pylon = new THREE.Mesh(pylonGeo, eyeMat);
+                    pylon.position.set(px, 1.05, -0.18);
+                    pylon.rotation.z = px < 0 ? 0.25 : -0.25;
+                    torsoPivot.add(pylon);
+                });
+            }
+
+            let bombCore = null;
+            if (base.isSapper) {
+                bombCore = new THREE.Mesh(this._getGeo('sapperBomb', () => new THREE.SphereGeometry(0.32, 10, 10)), eyeMat);
+                bombCore.position.set(0, 0.64, 0.28);
+                const backBomb = new THREE.Mesh(this._getGeo('sapperBombBack', () => new THREE.CylinderGeometry(0.22, 0.22, 0.52, 10)), eyeMat);
+                backBomb.position.set(0, 0.66, -0.44);
+                torsoPivot.add(bombCore, backBomb);
+            }
+
             const thrusterGlows = [];
-            if (type === 'leaper' || type === 'sniper' || type === 'overlord') {
+            if (type === 'leaper' || type === 'sniper' || type === 'overlord' || type === 'rail_enforcer' || type === 'dreadnought') {
                 const podGeo = this._getGeo('pod', () => new THREE.CylinderGeometry(0.09, 0.12, 0.48, 8));
                 const flameGeo = this._getGeo('flame', () => new THREE.ConeGeometry(0.1, 0.34, 6));
                 [-0.26, 0.26].forEach(tx => {
@@ -277,8 +346,8 @@
             shPistonR.rotation.z = 0.35;
             torsoPivot.add(shL, shR, shTrimL, shTrimR, shPistonL, shPistonR);
 
-            // Boss shoulder rail-cannons (Brute stays pure melee tank!)
-            if (type === 'overlord') {
+            // Boss shoulder rail-cannons (Overlord & Dreadnought!)
+            if (type === 'overlord' || type === 'dreadnought') {
                 const cannonGeo = this._getGeo('bossCannon', () => new THREE.CylinderGeometry(0.12, 0.14, 0.85, 8));
                 const tipGeo = this._getGeo('bossCannonTip', () => new THREE.SphereGeometry(0.11, 8, 8));
                 [-shX, shX].forEach(sx => {
@@ -321,7 +390,7 @@
             headGroup.add(jaw);
 
             if (isHeavyFrame) {
-                const hornCount = type === 'overlord' ? 2 : 1;
+                const hornCount = (type === 'overlord' || type === 'dreadnought') ? 2 : 1;
                 for (let h = 0; h < hornCount; h++) {
                     const hornGeo = this._getGeo('horn_' + h, () => new THREE.ConeGeometry(0.09, 0.58 + h * 0.16, 6));
                     const hL = new THREE.Mesh(hornGeo, armorMat);
@@ -335,7 +404,7 @@
                 triadVisor.position.set(0, 0.03, 0.25);
                 triadVisor.userData.hitPart = 'head';
                 headGroup.add(triadVisor);
-            } else if (type === 'sniper') {
+            } else if (base.isSniper) {
                 const lens = new THREE.Mesh(this._getGeo('sniperLens', () => new THREE.CylinderGeometry(0.12, 0.12, 0.26, 12)), eyeMat);
                 lens.rotation.x = Math.PI / 2;
                 lens.position.set(0, 0.04, 0.26);
@@ -355,11 +424,38 @@
                 headGroup.add(visor);
             }
 
-            // Articulated Robotic Arms with Hydraulic Braces & Weapons
+            // Articulated Robotic Arms with Spinning Miniguns, Thermal Saws, EMP Cutters & Energy Shields
             const shEnergyMat = this._getMat('shEnergy', () => new THREE.MeshBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.58 }));
             const armUpperGeo = this._getGeo('armUpper', () => new THREE.CylinderGeometry(0.12, 0.1, 0.48, 8));
             const armForearmGeo = this._getGeo('armForearm', () => new THREE.CylinderGeometry(0.105, 0.085, 0.48, 8));
             const armPistonGeo = this._getGeo('armPiston', () => new THREE.CylinderGeometry(0.032, 0.032, 0.36, 6));
+            let gunBarrelsR = null;
+            let gunBarrelsL = null;
+            let sawL = null;
+            let sawR = null;
+
+            const buildGatlingMount = (armPivot, side) => {
+                const receiver = new THREE.Mesh(this._getGeo('mgRecv', () => new THREE.BoxGeometry(0.20, 0.22, 0.42)), armorMat);
+                receiver.position.set(0, -0.66, 0.38);
+                armPivot.add(receiver);
+
+                const cluster = new THREE.Group();
+                cluster.position.set(0, -0.66, 0.92);
+                const barrelGeo = this._getGeo('mgBarrel', () => new THREE.CylinderGeometry(0.022, 0.022, 0.86, 6));
+                for (let b = 0; b < 6; b++) {
+                    const ang = (b / 6) * Math.PI * 2;
+                    const bar = new THREE.Mesh(barrelGeo, servoMat);
+                    bar.rotation.x = Math.PI / 2;
+                    bar.position.set(Math.cos(ang) * 0.068, Math.sin(ang) * 0.068, 0);
+                    cluster.add(bar);
+                }
+                const muzzleRing = new THREE.Mesh(this._getGeo('mgRing', () => new THREE.TorusGeometry(0.085, 0.018, 6, 12)), eyeMat);
+                muzzleRing.position.z = 0.38;
+                cluster.add(muzzleRing);
+                armPivot.add(cluster);
+                if (side === 1) gunBarrelsR = cluster;
+                else gunBarrelsL = cluster;
+            };
 
             const makeArm = (side) => {
                 const armPivot = new THREE.Group();
@@ -387,23 +483,25 @@
                 forearm.userData.hitPart = 'body';
                 armPivot.add(forearm);
 
-                if (side === 1 && (type === 'spitter' || type === 'sniper')) {
-                    const barrelLen = type === 'sniper' ? 1.25 : 0.78;
-                    const gun = new THREE.Mesh(this._getGeo('armGun_' + type, () => new THREE.BoxGeometry(0.14, 0.16, barrelLen)), armorMat);
+                if ((side === 1 && base.isGunner && !base.isPyroUnit) || (side === -1 && base.isHeavyGunner)) {
+                    buildGatlingMount(armPivot, side);
+                } else if (side === 1 && (type === 'spitter' || base.isSniper || base.isCryoUnit || base.isPyroUnit)) {
+                    const barrelLen = base.isRailEnforcer ? 1.45 : (base.isSniper ? 1.25 : 0.88);
+                    const gun = new THREE.Mesh(this._getGeo('armGun_' + barrelLen, () => new THREE.BoxGeometry(0.14, 0.16, barrelLen)), armorMat);
                     gun.position.set(0, -0.66, 0.54);
-                    const coils = new THREE.Mesh(this._getGeo('armCoils_' + type, () => new THREE.CylinderGeometry(0.055, 0.055, barrelLen * 0.6, 8)), skinMat);
+                    const coils = new THREE.Mesh(this._getGeo('armCoils_' + barrelLen, () => new THREE.CylinderGeometry(0.055, 0.055, barrelLen * 0.6, 8)), skinMat);
                     coils.rotation.x = Math.PI / 2;
                     coils.position.set(0, -0.6, 0.5);
                     const gunTip = new THREE.Mesh(this._getGeo('gunTip', () => new THREE.SphereGeometry(0.08, 8, 8)), eyeMat);
                     gunTip.position.set(0, -0.66, 0.54 + barrelLen / 2);
                     armPivot.add(gun, coils, gunTip);
-                    if (type === 'sniper') {
+                    if (base.isSniper) {
                         const scope = new THREE.Mesh(this._getGeo('armScope', () => new THREE.CylinderGeometry(0.04, 0.048, 0.42, 8)), servoMat);
                         scope.rotation.x = Math.PI / 2;
                         scope.position.set(0, -0.52, 0.52);
                         armPivot.add(scope);
                     }
-                } else if (side === -1 && type === 'shieldbearer') {
+                } else if (side === -1 && isShieldFrame) {
                     const shFrame = new THREE.Mesh(this._getGeo('shFrame', () => new THREE.BoxGeometry(1.12, 1.76, 0.12)), armorMat);
                     shFrame.position.set(0.18, -0.55, 0.52);
                     const shEnergy = new THREE.Mesh(this._getGeo('shEnergy', () => new THREE.BoxGeometry(0.96, 1.54, 0.14)), shEnergyMat);
@@ -419,7 +517,20 @@
                     shFrame.userData.isEnemyShield = true;
                     shBar.userData.isEnemyShield = true;
                     armPivot.add(shFrame, shEnergy, shBar, shEmitterTop, shEmitterBot);
-                } else if (type === 'brute' || (type === 'overlord' && side === 1)) {
+                } else if (base.isBerserker) {
+                    const saw = new THREE.Mesh(this._getGeo('chainSaw', () => new THREE.CylinderGeometry(0.28, 0.28, 0.045, 10)), eyeMat);
+                    saw.rotation.z = Math.PI / 2;
+                    saw.position.set(0, -0.78, 0.52);
+                    const sawHousing = new THREE.Mesh(this._getGeo('sawMount', () => new THREE.BoxGeometry(0.14, 0.14, 0.42)), armorMat);
+                    sawHousing.position.set(0, -0.78, 0.34);
+                    armPivot.add(sawHousing, saw);
+                    if (side === -1) sawL = saw;
+                    else sawR = saw;
+                } else if (type === 'turret_killer') {
+                    const cutter = new THREE.Mesh(this._getGeo('empCutter', () => new THREE.BoxGeometry(0.08, 0.22, 0.62)), eyeMat);
+                    cutter.position.set(0, -0.78, 0.48);
+                    armPivot.add(cutter);
+                } else if (type === 'brute') {
                     const fist = new THREE.Mesh(this._getGeo('heavyFist', () => new THREE.BoxGeometry(0.36, 0.38, 0.42)), armorMat);
                     fist.position.set(0, -0.82, 0.32);
                     const knuckle = new THREE.Mesh(this._getGeo('heavyKnuckle', () => new THREE.BoxGeometry(0.38, 0.14, 0.44)), eyeMat);
@@ -513,7 +624,7 @@
                 group.add(bossRing, bossOuterRing);
             }
 
-            // Visible Red Laser Sight Line for Sniper Robots ("ОСА") with static zero-GC BufferAttribute!
+            // Visible Red/Cyan Laser Sight Line for Snipers & Rail Enforcers with static zero-GC BufferAttribute!
             let laserLine = null;
             let laserArr = null;
             let laserPosAttr = null;
@@ -522,9 +633,10 @@
                 laserArr = new Float32Array(6);
                 laserPosAttr = new THREE.BufferAttribute(laserArr, 3);
                 lGeo.setAttribute('position', laserPosAttr);
+                const laserColor = base.isRailEnforcer ? 0x38bdf8 : 0xf43f5e;
                 laserLine = new THREE.Line(
                     lGeo,
-                    this._getMat('sniperLaser', () => new THREE.LineBasicMaterial({ color: 0xf43f5e, transparent: true, opacity: 0.85 }))
+                    this._getMat('sniperLaser_' + laserColor, () => new THREE.LineBasicMaterial({ color: laserColor, transparent: true, opacity: 0.85 }))
                 );
                 laserLine.visible = false;
                 this.scene.add(laserLine);
@@ -557,6 +669,11 @@
                 bossOuterRing,
                 backTurbine,
                 ammoDrum,
+                gunBarrelsR,
+                gunBarrelsL,
+                sawL,
+                sawR,
+                bombCore,
                 laserLine,
                 laserArr,
                 laserPosAttr,
@@ -581,8 +698,10 @@
                 leapCooldown: 2.4 + Math.random() * 2.0,
                 leapVy: 0,
                 inAir: false,
-                attackCooldown: 0.85 + Math.random() * 0.85,
+                attackCooldown: 0.65 + Math.random() * 0.75,
                 attackWindup: 0,
+                burstLeft: 0,
+                burstTimer: 0,
                 sniperAimTimer: 0,
                 meleeChargeWindup: 0,
                 flinchTimer: 0,
@@ -607,7 +726,8 @@
                 _structTimer: 0,
                 _cachedBlockingStruct: null,
                 _turretScanTimer: 0,
-                _cachedTurret: null
+                _cachedTurret: null,
+                _animLodTick: 0
             };
 
             group.traverse(child => {
@@ -786,7 +906,7 @@
 
                 if (a.bossRing) a.bossRing.rotation.z += dt * 2.2;
 
-                // 7. Movement & Role-Based Tactical AI (Turret Aggro + Zero Wall-Clipping + Craft-Wall Assault)
+                // 7. Movement & Role-Based Tactical AI (Turret Siege Priority + Zero Wall-Clipping + Craft-Wall Assault)
                 const dmgTurretFn = combatCtx.onDamageTurret || (combatCtx.building ? (tr, d, att) => combatCtx.building.damageTurret(tr, d, att, combatCtx) : null);
                 const enemyHeight = 2.45 * a.baseScale;
                 let playerPos = realPlayerPos;
@@ -794,10 +914,11 @@
                 let targetTurret = null;
                 const getTurretCoords = (t) => (t.pos || (t.group && t.group.position) || { x: t.x || 0, y: t.y || 0, z: t.z || 0 });
                 if (!a.exitingDoor && combatCtx.turrets && combatCtx.turrets.length > 0) {
+                    const maxTurretScan = a.cfg.turretAggroRange || 46;
                     if (a.aggroTurret && a.aggroTurret.hp > 0 && combatCtx.turrets.includes(a.aggroTurret)) {
                         const tp = getTurretCoords(a.aggroTurret);
                         const dAggro = Math.hypot(tp.x - pos.x, tp.z - pos.z);
-                        if (dAggro < 52) targetTurret = a.aggroTurret;
+                        if (dAggro < Math.max(56, maxTurretScan)) targetTurret = a.aggroTurret;
                         else a.aggroTurret = null;
                     } else {
                         a.aggroTurret = null;
@@ -809,7 +930,12 @@
                             a._cachedTurret = null;
                             const dReal = Math.hypot(realPlayerPos.x - pos.x, realPlayerPos.z - pos.z);
                             let bestDist = Infinity;
-                            const prioDist = Math.min(34, Math.max(20, dReal * 1.15));
+                            // Dedicated Saboteurs, Sappers & Machine-Gunners actively hunt turrets regardless of nearby player!
+                            const prioDist = a.cfg.isTurretHunter
+                                ? maxTurretScan
+                                : (a.cfg.isGunner || a.cfg.isRailEnforcer || a.cfg.isPyroUnit
+                                    ? Math.min(maxTurretScan, Math.max(32, dReal * 1.45))
+                                    : Math.min(38, Math.max(22, dReal * 1.18)));
                             for (const t of combatCtx.turrets) {
                                 if (!t || t.hp <= 0) continue;
                                 const tp = getTurretCoords(t);
@@ -909,8 +1035,8 @@
                         if (a.meleeChargeWindup <= 0) {
                             spawnShockwave(this._vTmp.set(pos.x, pos.y + 0.3, pos.z), 6.2, 0xf97316, 0.35);
                             this.sound.playGiantStomp(1.0);
-                            if (targetTurret && dmgTurretFn && distToPlayer <= 6.8 && Math.abs(playerPos.y - pos.y) < 3.0) {
-                                dmgTurretFn(targetTurret, a.damage * 1.45, a);
+                            if (targetTurret && dmgTurretFn && distToPlayer <= 6.8 && Math.abs(playerPos.y - pos.y) < 4.5) {
+                                dmgTurretFn(targetTurret, a.damage * (a.cfg.turretDmgMult || 1.6), a);
                             }
                             const realDist = Math.hypot(realPlayerPos.x - pos.x, realPlayerPos.z - pos.z);
                             if (realDist <= 6.2 && Math.abs(realPlayerPos.y - pos.y) < 3.0 &&
@@ -929,7 +1055,7 @@
                             combatCtx.onDamageStructure(blockingStruct, a.damage * 1.45, a);
                         }
                     } else if (distToPlayer > desiredDist || !hasLOS) {
-                        if (!hasLOS && this.map.sampleFlowDirection(pos.x, pos.z, flowVec)) {
+                        if (!hasLOS && !targetTurret && this.map.sampleFlowDirection(pos.x, pos.z, flowVec)) {
                             moveDir.copy(flowVec);
                             // Add mild corner-peek lateral bias if stuck close to wall
                             moveDir.x += -flowVec.z * a.strafeSign * 0.22;
@@ -1020,7 +1146,22 @@
 
                     // Attack Execution (Strict LOS Enforced — NEVER shoots through walls!)
                     a.attackCooldown -= dt;
-                    if (a.cfg.isSniper && a.sniperAimTimer > 0) {
+                    if (a.burstLeft > 0) {
+                        if (!hasLOS) {
+                            a.burstLeft = 0;
+                        } else {
+                            a.burstTimer -= dt;
+                            if (a.burstTimer <= 0) {
+                                this._fireEnemyProjectile(a, playerPos, playerVel, a.cfg.isPyroUnit ? 'pyro' : 'mg');
+                                a.burstLeft--;
+                                a.burstTimer = a.cfg.mgBurstInterval || 0.1;
+                                a.attackWindup = 0.12;
+                                if (a.burstLeft <= 0) {
+                                    a.attackCooldown = a.cfg.mgCooldown || 1.65;
+                                }
+                            }
+                        }
+                    } else if (a.cfg.isSniper && a.sniperAimTimer > 0) {
                         if (!hasLOS) {
                             // Player stepped behind cover: break sniper lock immediately!
                             a.sniperAimTimer = 0;
@@ -1039,39 +1180,80 @@
                             }
                             if (a.sniperAimTimer <= 0) {
                                 if (a.laserLine) a.laserLine.visible = false;
-                                this._fireEnemyProjectile(a, playerPos, playerVel, 'sniper');
-                                a.attackCooldown = 2.6;
+                                this._fireEnemyProjectile(a, playerPos, playerVel, a.cfg.isRailEnforcer ? 'rail' : 'sniper');
+                                a.attackCooldown = a.cfg.isRailEnforcer ? 2.1 : 2.6;
                                 a.attackWindup = 0.25;
                             }
                         }
+                    } else if (a.cfg.isSapper && (blockingStruct || (distToPlayer <= 3.9 && Math.abs(playerPos.y - pos.y) < 4.4 && hasLOS))) {
+                        // Sapper bomb-bot self-detonates violently against turrets, walls, and player!
+                        spawnShockwave(this._vTmp.set(pos.x, pos.y + 0.6, pos.z), 5.8, 0xf43f5e, 0.36);
+                        spawnParticles(this._vTmp.set(pos.x, pos.y + 0.8, pos.z), 0xf97316, 18, 11);
+                        if (this.sound.playExplosion) this.sound.playExplosion();
+                        if (blockingStruct && combatCtx.onDamageStructure) {
+                            combatCtx.onDamageStructure(blockingStruct, a.damage * 2.5, a);
+                        }
+                        if (combatCtx.turrets && dmgTurretFn) {
+                            for (let ti = combatCtx.turrets.length - 1; ti >= 0; ti--) {
+                                const tr = combatCtx.turrets[ti];
+                                if (!tr || tr.hp <= 0) continue;
+                                const tp = getTurretCoords(tr);
+                                if (Math.hypot(tp.x - pos.x, tp.z - pos.z) <= 6.2 && Math.abs(tp.y - pos.y) < 4.8) {
+                                    dmgTurretFn(tr, a.damage * (a.cfg.turretDmgMult || 2.8), a);
+                                }
+                            }
+                        }
+                        const realDist = Math.hypot(realPlayerPos.x - pos.x, realPlayerPos.z - pos.z);
+                        if (realDist <= 5.2 && Math.abs(realPlayerPos.y - pos.y) < 3.6) {
+                            onDamagePlayer(a.damage * 1.15, pos);
+                        }
+                        a.hp = 0;
+                        a.dying = true;
+                        a.deathTimer = 0.35;
+                        continue;
                     } else if (!blockingStruct && a.attackCooldown <= 0 && a.meleeChargeWindup <= 0) {
                         if (!a.ranged) {
-                            const reach = a.attackRange + (targetTurret ? 1.15 : 0);
-                            if (distToPlayer <= reach && Math.abs(playerPos.y - pos.y) < 3.0 && hasLOS) {
+                            const reach = a.attackRange + (targetTurret ? 1.35 : 0);
+                            const yTol = targetTurret ? 4.4 : 3.0;
+                            if (distToPlayer <= reach && Math.abs(playerPos.y - pos.y) < yTol && hasLOS) {
                                 if (a.cfg.hasGroundSlam) {
                                     a.meleeChargeWindup = 0.36;
                                 } else {
                                     if (targetTurret && dmgTurretFn) {
-                                        dmgTurretFn(targetTurret, a.damage * 1.35, a);
+                                        dmgTurretFn(targetTurret, a.damage * (a.cfg.turretDmgMult || 1.45), a);
+                                        if (a.cfg.isTurretHunter) {
+                                            spawnShockwave(this._vTmp.set(pos.x, pos.y + 1.0, pos.z), 4.6, 0x22d3ee, 0.24);
+                                        }
                                     } else if (!targetTurret) {
                                         onDamagePlayer(a.damage, pos);
                                     }
-                                    a.attackCooldown = a.type === 'shieldbearer' ? 1.25 : 0.95;
+                                    a.attackCooldown = a.type === 'shieldbearer' ? 1.2 : (a.cfg.isBerserker ? 0.65 : 0.92);
                                     a.attackWindup = 0.28;
                                 }
                             }
                         } else if (a.cfg.isSniper && hasLOS && distToPlayer <= a.attackRange) {
-                            a.sniperAimTimer = 0.85;
+                            a.sniperAimTimer = a.cfg.isRailEnforcer ? 0.65 : 0.85;
+                        } else if ((a.cfg.isGunner || a.cfg.isPyroUnit) && hasLOS && distToPlayer <= a.attackRange) {
+                            if (a.cfg.isBoss && distToPlayer <= 6.2) {
+                                a.meleeChargeWindup = 0.36;
+                            } else if (a.type === 'dreadnought' && distToPlayer > 9.0 && Math.random() < 0.28) {
+                                this._fireEnemyProjectile(a, playerPos, playerVel, 'grenade');
+                                a.attackCooldown = 1.8;
+                                a.attackWindup = 0.28;
+                            } else {
+                                a.burstLeft = a.cfg.mgBurstCount || 5;
+                                a.burstTimer = 0;
+                            }
                         } else if (a.cfg.isGrenadier && distToPlayer <= a.attackRange && distToPlayer > 7.5 && hasLOS) {
                             this._fireEnemyProjectile(a, playerPos, playerVel, 'grenade');
-                            a.attackCooldown = 2.75;
+                            a.attackCooldown = 2.65;
                             a.attackWindup = 0.3;
                         } else if (distToPlayer <= a.attackRange) {
                             if (a.cfg.isBoss && distToPlayer <= 5.5 && hasLOS) {
                                 a.meleeChargeWindup = 0.36;
                             } else if (hasLOS) {
-                                this._fireEnemyProjectile(a, playerPos, playerVel, 'plasma');
-                                a.attackCooldown = a.cfg.isBoss ? 1.6 : 1.95;
+                                this._fireEnemyProjectile(a, playerPos, playerVel, a.cfg.isCryoUnit ? 'cryo' : 'plasma');
+                                a.attackCooldown = a.cfg.isBoss ? 1.45 : 1.75;
                                 a.attackWindup = 0.25;
                             }
                         }
@@ -1085,6 +1267,13 @@
         _animateAlien(a, dt, moving, slowMult, distToPlayer) {
             if (a.flinchTimer > 0) a.flinchTimer = Math.max(0, a.flinchTimer - dt);
             if (a.attackWindup > 0) a.attackWindup = Math.max(0, a.attackWindup - dt);
+
+            if (distToPlayer > 52 && a.attackWindup <= 0 && a.burstLeft <= 0 && a.meleeChargeWindup <= 0) {
+                if (((a._animLodTick = (a._animLodTick + 1) & 1) === 1)) {
+                    if (moving) a.walkPhase += dt * a.strideFreq * slowMult;
+                    return;
+                }
+            }
 
             const flinchBack = a.flinchTimer > 0 ? -Math.sin((a.flinchTimer / 0.16) * Math.PI) * 0.28 : 0;
             const strikeFwd = a.attackWindup > 0 ? Math.sin((a.attackWindup / 0.28) * Math.PI) * 0.45 : 0;
@@ -1115,15 +1304,15 @@
 
                 a.legL.legPivot.rotation.x = s * a.strideAmp;
                 a.legR.legPivot.rotation.x = -s * a.strideAmp;
-                a.legL.shinPivot.rotation.x = Math.max(0, -c) * (a.type === 'scout' || a.type === 'leaper' ? 1.15 : 0.68);
-                a.legR.shinPivot.rotation.x = Math.max(0, c) * (a.type === 'scout' || a.type === 'leaper' ? 1.15 : 0.68);
+                a.legL.shinPivot.rotation.x = Math.max(0, -c) * (a.type === 'scout' || a.type === 'leaper' || a.type === 'sapper' ? 1.15 : 0.68);
+                a.legR.shinPivot.rotation.x = Math.max(0, c) * (a.type === 'scout' || a.type === 'leaper' || a.type === 'sapper' ? 1.15 : 0.68);
 
-                if (a.type === 'shieldbearer') {
+                if (a.cfg.hasFrontShield) {
                     // Brace heavy shield forward while advancing!
                     a.armL.rotation.x = -0.92 + s * 0.06;
-                    a.armR.rotation.x = s * 0.55 - strikeFwd * 1.1;
-                } else if (a.type === 'spitter' || a.type === 'sniper') {
-                    a.armL.rotation.x = -s * a.strideAmp * 0.6;
+                    a.armR.rotation.x = a.ranged ? (-0.9 - strikeFwd * 0.5) : (s * 0.55 - strikeFwd * 1.1);
+                } else if (a.ranged) {
+                    a.armL.rotation.x = a.cfg.isHeavyGunner ? (-0.88 - strikeFwd * 0.4) : (-s * a.strideAmp * 0.6);
                     a.armR.rotation.x = -0.9 - strikeFwd * 0.6;
                 } else {
                     a.armL.rotation.x = -s * a.strideAmp * 0.85 - strikeFwd;
@@ -1132,11 +1321,11 @@
 
                 if (a.tailPivot) a.tailPivot.rotation.y = s * 0.35;
 
-                if (a.type === 'scout' || a.type === 'leaper') {
+                if (a.type === 'scout' || a.type === 'leaper' || a.type === 'sapper') {
                     a.hipPivot.position.y = 1.08 + Math.abs(s) * 0.22;
                     a.hipPivot.rotation.z = s * 0.08;
                     a.torsoPivot.rotation.x = a.baseLean + Math.abs(c) * 0.09 + flinchBack;
-                } else if (a.type === 'brute' || a.type === 'overlord') {
+                } else if (a.type === 'brute' || a.type === 'overlord' || a.type === 'dreadnought' || a.type === 'heavy_gunner') {
                     a.hipPivot.position.y = 1.08 - Math.abs(s) * 0.16;
                     a.hipPivot.rotation.z = s * 0.13;
                     a.torsoPivot.rotation.y = -s * 0.11;
@@ -1161,8 +1350,9 @@
                 a.legR.legPivot.rotation.x *= 0.85;
                 a.hipPivot.rotation.z *= 0.85;
                 a.torsoPivot.rotation.x = a.baseLean + flinchBack + strikeFwd * 0.35;
-                if (a.type === 'spitter' || a.type === 'sniper') {
+                if (a.ranged) {
                     a.armR.rotation.x = -0.92 - strikeFwd * 0.5;
+                    if (a.cfg.isHeavyGunner) a.armL.rotation.x = -0.92 - strikeFwd * 0.5;
                 }
             }
 
@@ -1172,6 +1362,12 @@
             if (a.backTurbine) a.backTurbine.rotation.z += dt * (a.meleeChargeWindup > 0 ? 18.0 : 7.5);
             if (a.bossOuterRing) a.bossOuterRing.rotation.z -= dt * 2.4;
             if (a.ammoDrum && a.attackWindup > 0) a.ammoDrum.rotation.x += dt * 11.0;
+            const mgSpin = (a.burstLeft > 0 || a.attackWindup > 0) ? 30.0 : 3.5;
+            if (a.gunBarrelsR) a.gunBarrelsR.rotation.z += dt * mgSpin;
+            if (a.gunBarrelsL) a.gunBarrelsL.rotation.z -= dt * mgSpin;
+            if (a.sawL) a.sawL.rotation.x += dt * 24.0;
+            if (a.sawR) a.sawR.rotation.x += dt * 24.0;
+            if (a.bombCore) a.bombCore.scale.setScalar(0.88 + Math.sin(a.walkPhase * 1.8) * 0.24);
         }
 
         _ensureCollisionGrid() {
@@ -1282,9 +1478,25 @@
             }
         }
 
+        _acquireBulletMesh(radius, color, poolKey) {
+            if (!this._bulletPools) this._bulletPools = new Map();
+            let pool = this._bulletPools.get(poolKey);
+            if (pool && pool.length > 0) {
+                const mesh = pool.pop();
+                mesh.visible = true;
+                return mesh;
+            }
+            const projGeo = this._getGeo('proj_' + radius, () => new THREE.SphereGeometry(radius, 8, 8));
+            const projMat = this._getMat('projMat_' + color, () => new THREE.MeshBasicMaterial({ color }));
+            const mesh = new THREE.Mesh(projGeo, projMat);
+            this.scene.add(mesh);
+            return mesh;
+        }
+
         _fireEnemyProjectile(alien, playerPos, playerVel, kind) {
             const p = alien.group.position;
             const origin = this._vOrigin.set(p.x, p.y + 1.85 * alien.baseScale, p.z);
+            const turretMult = alien.cfg.turretDmgMult || 1.35;
 
             if (kind === 'grenade') {
                 // Parabolic arcing mortar grenade with floor landing ring!
@@ -1296,70 +1508,87 @@
                 const vz = (targetZ - origin.z) / flightTime;
                 const vy = ((playerPos.y - origin.y) + 0.5 * grav * flightTime * flightTime) / flightTime;
 
-                const mesh = new THREE.Mesh(
-                    this._getGeo('grenadeGeo', () => new THREE.OctahedronGeometry(0.32, 1)),
-                    this._getMat('grenadeMat', () => new THREE.MeshBasicMaterial({ color: 0xf97316 }))
-                );
-                mesh.position.copy(origin);
-                this.scene.add(mesh);
-
-                const ringMesh = new THREE.Mesh(
-                    this._getGeo('grenadeRingGeo', () => new THREE.RingGeometry(2.8, 3.2, 24)),
-                    this._getMat('grenadeRingMat', () => new THREE.MeshBasicMaterial({ color: 0xf97316, side: THREE.DoubleSide, transparent: true, opacity: 0.7 }))
-                );
-                ringMesh.rotation.x = Math.PI / 2;
-                ringMesh.position.set(targetX, 0.12, targetZ);
-                this.scene.add(ringMesh);
-
-                this.enemyBullets.push({
-                    mesh,
-                    ringMesh,
-                    vel: new THREE.Vector3(vx, vy, vz),
-                    gravity: grav,
-                    isGrenade: true,
-                    blastRadius: 4.2,
-                    damage: alien.damage,
-                    life: 2.5,
-                    color: 0xf97316,
-                    reflected: false
-                });
+                let rec = this._freeGrenades && this._freeGrenades.length > 0 ? this._freeGrenades.pop() : null;
+                if (!rec) {
+                    const mesh = new THREE.Mesh(
+                        this._getGeo('grenadeGeo', () => new THREE.OctahedronGeometry(0.32, 1)),
+                        this._getMat('grenadeMat', () => new THREE.MeshBasicMaterial({ color: 0xf97316 }))
+                    );
+                    this.scene.add(mesh);
+                    const ringMesh = new THREE.Mesh(
+                        this._getGeo('grenadeRingGeo', () => new THREE.RingGeometry(2.8, 3.2, 24)),
+                        this._getMat('grenadeRingMat', () => new THREE.MeshBasicMaterial({ color: 0xf97316, side: THREE.DoubleSide, transparent: true, opacity: 0.7 }))
+                    );
+                    ringMesh.rotation.x = Math.PI / 2;
+                    this.scene.add(ringMesh);
+                    rec = { mesh, ringMesh, vel: new THREE.Vector3() };
+                }
+                rec.mesh.visible = true;
+                rec.mesh.position.copy(origin);
+                rec.ringMesh.visible = true;
+                rec.ringMesh.position.set(targetX, 0.12, targetZ);
+                rec.ringMesh.scale.set(1, 1, 1);
+                rec.vel.set(vx, vy, vz);
+                rec.gravity = grav;
+                rec.isGrenade = true;
+                rec.blastRadius = 4.4;
+                rec.damage = alien.damage;
+                rec.turretMult = turretMult;
+                rec.life = 2.5;
+                rec.color = 0xf97316;
+                rec.reflected = false;
+                this.enemyBullets.push(rec);
                 return;
             }
 
-            const speed = kind === 'sniper' ? 52 : (alien.cfg.isBoss ? 27 : 21);
+            const isMG = (kind === 'mg');
+            const isRail = (kind === 'rail');
+            const isSniper = (kind === 'sniper');
+            const isPyro = (kind === 'pyro');
+            const isCryo = (kind === 'cryo');
+
+            const speed = isRail ? 64 : (isSniper ? 52 : (isMG ? 39 : (isCryo ? 28 : (isPyro ? 27 : (alien.cfg.isBoss ? 27 : 22)))));
             const dist = origin.distanceTo(playerPos);
-            const leadTime = kind === 'sniper' ? 0.15 : Math.min(0.65, (dist / speed) * 0.55);
+            const leadTime = (isRail || isSniper) ? 0.12 : (isMG ? Math.min(0.32, (dist / speed) * 0.45) : Math.min(0.65, (dist / speed) * 0.55));
             const aimTarget = this._vTarget.set(
                 playerPos.x + playerVel.x * leadTime,
-                playerPos.y + 1.45,
+                playerPos.y + 1.35,
                 playerPos.z + playerVel.z * leadTime
             );
             const baseDir = aimTarget.sub(origin).normalize();
 
-            const volleyCount = alien.cfg.isBoss ? 3 : 1;
-            const color = kind === 'sniper' ? 0xf43f5e : (alien.cfg.isBoss ? 0xfacc15 : 0x4ade80);
-            const radius = kind === 'sniper' ? 0.24 : (alien.cfg.isBoss ? 0.42 : 0.22);
-            const projGeo = this._getGeo('proj_' + radius, () => new THREE.SphereGeometry(radius, 10, 10));
-            const projMat = this._getMat('projMat_' + color, () => new THREE.MeshBasicMaterial({ color }));
+            const volleyCount = (alien.cfg.isBoss && !isMG) ? 3 : 1;
+            const color = isRail ? 0x38bdf8 : (isSniper ? 0xf43f5e : (isPyro ? 0xf97316 : (isCryo ? 0x67e8f9 : (isMG ? (alien.type === 'aegis_commander' ? 0x34d399 : 0xfbbf24) : (alien.cfg.isBoss ? 0xfacc15 : 0x4ade80)))));
+            const radius = isMG ? 0.16 : (isRail ? 0.22 : (isSniper ? 0.24 : (isPyro || isCryo ? 0.25 : (alien.cfg.isBoss ? 0.42 : 0.22))));
+            const poolKey = `${radius}_${color}`;
 
             for (let v = 0; v < volleyCount; v++) {
                 const dir = baseDir.clone();
                 if (volleyCount > 1) {
                     const spread = (v - (volleyCount - 1) / 2) * 0.12;
                     dir.applyAxisAngle(this._yAxis, spread);
+                } else if (isMG || isPyro) {
+                    const jitter = (Math.random() - 0.5) * (isPyro ? 0.08 : 0.055);
+                    dir.applyAxisAngle(this._yAxis, jitter);
+                    dir.y += (Math.random() - 0.5) * 0.03;
+                    dir.normalize();
                 }
 
-                const mesh = new THREE.Mesh(projGeo, projMat);
+                const mesh = this._acquireBulletMesh(radius, color, poolKey);
                 mesh.position.copy(origin);
-                this.scene.add(mesh);
 
                 this.enemyBullets.push({
                     mesh,
+                    _pooledMesh: true,
+                    _poolKey: poolKey,
                     vel: dir.multiplyScalar(speed),
                     gravity: 0,
                     isGrenade: false,
+                    isPyro,
+                    cryoSlow: isCryo ? 1.35 : 0,
+                    turretMult,
                     damage: alien.damage,
-                    life: 4.5,
+                    life: isMG ? 3.2 : 4.5,
                     color,
                     reflected: false
                 });

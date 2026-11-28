@@ -903,6 +903,26 @@
         // =====================================================================
         // ALLIED TURRETS (POLYMER TURRET + HEAVY GATLING EMPLACEMENT!)
         // =====================================================================
+        _tGeo(key, factory) {
+            if (!this._turretGeos) this._turretGeos = new Map();
+            let g = this._turretGeos.get(key);
+            if (!g) {
+                g = factory();
+                this._turretGeos.set(key, g);
+            }
+            return g;
+        }
+
+        _tMat(key, factory) {
+            if (!this._turretMats) this._turretMats = new Map();
+            let m = this._turretMats.get(key);
+            if (!m) {
+                m = factory();
+                this._turretMats.set(key, m);
+            }
+            return m;
+        }
+
         spawnTurret(kind, x, y, z, duration, gameCtx, customStats = null, isPermanent = false) {
             const isGatling = (kind === 'gatling' || kind === 'gatling_mini');
             const isMini = (kind === 'gatling_mini');
@@ -910,29 +930,31 @@
             const group = new THREE.Group();
             group.position.set(x, y, z);
 
-            const steelMat = new THREE.MeshStandardMaterial({ color: 0x0f1f18, metalness: 0.85, roughness: 0.26 });
-            const bodyMat = new THREE.MeshStandardMaterial({
+            const steelMat = this._tMat('steel', () => new THREE.MeshStandardMaterial({ color: 0x0f1f18, metalness: 0.85, roughness: 0.26 }));
+            const bodyMat = this._tMat('body_' + isGatling, () => new THREE.MeshStandardMaterial({
                 color: isGatling ? 0x2a1d12 : 0x133829,
                 metalness: 0.72,
                 roughness: 0.34
-            });
-            const glowMat = new THREE.MeshBasicMaterial({ color: isGatling ? 0xf97316 : 0x4ade80 });
+            }));
+            const glowMat = this._tMat('glow_' + isGatling, () => new THREE.MeshBasicMaterial({ color: isGatling ? 0xf97316 : 0x4ade80 }));
 
             // Heavy tripod legs + stabilizer feet + armored collar
+            const legGeo = this._tGeo('tLeg', () => new THREE.BoxGeometry(0.14, 0.95, 0.18));
+            const padGeo = this._tGeo('tPad', () => new THREE.BoxGeometry(0.28, 0.08, 0.28));
             for (let k = 0; k < 3; k++) {
                 const ang = (k / 3) * Math.PI * 2;
-                const leg = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.95, 0.18), steelMat);
+                const leg = new THREE.Mesh(legGeo, steelMat);
                 leg.position.set(Math.cos(ang) * 0.44, 0.42, Math.sin(ang) * 0.44);
                 leg.rotation.z = Math.cos(ang) * 0.42;
                 leg.rotation.x = -Math.sin(ang) * 0.42;
-                const pad = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.28), bodyMat);
+                const pad = new THREE.Mesh(padGeo, bodyMat);
                 pad.position.set(Math.cos(ang) * 0.62, 0.04, Math.sin(ang) * 0.62);
                 group.add(leg, pad);
             }
 
-            const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.42, 0.55, 10), steelMat);
+            const pedestal = new THREE.Mesh(this._tGeo('tPed', () => new THREE.CylinderGeometry(0.32, 0.42, 0.55, 10)), steelMat);
             pedestal.position.y = 0.78;
-            const rotCollar = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.045, 6, 16), glowMat);
+            const rotCollar = new THREE.Mesh(this._tGeo('tCollar', () => new THREE.TorusGeometry(0.36, 0.045, 6, 16)), glowMat);
             rotCollar.rotation.x = Math.PI / 2;
             rotCollar.position.y = 1.06;
             group.add(pedestal, rotCollar);
@@ -941,36 +963,39 @@
             headPivot.position.y = 1.24;
             group.add(headPivot);
 
-            const housing = new THREE.Mesh(new THREE.BoxGeometry(isGatling ? 0.7 : 0.56, 0.44, 0.72), bodyMat);
-            const opticEye = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), glowMat);
+            const housing = new THREE.Mesh(this._tGeo('tHouse_' + isGatling, () => new THREE.BoxGeometry(isGatling ? 0.7 : 0.56, 0.44, 0.72)), bodyMat);
+            const opticEye = new THREE.Mesh(this._tGeo('tOptic', () => new THREE.SphereGeometry(0.14, 10, 10)), glowMat);
             opticEye.position.set(0, 0.25, 0.24);
             headPivot.add(housing, opticEye);
 
             let barrelCluster = null;
             if (isGatling) {
                 const gunShield = new THREE.Mesh(
-                    new THREE.BoxGeometry(0.95, 0.58, 0.1),
-                    new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.3 })
+                    this._tGeo('tShield', () => new THREE.BoxGeometry(0.95, 0.58, 0.1)),
+                    this._tMat('tShieldMat', () => new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.3 }))
                 );
                 gunShield.position.set(0, 0.08, 0.38);
                 headPivot.add(gunShield);
 
-                const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.36, 12), steelMat);
+                const drum = new THREE.Mesh(this._tGeo('tDrum', () => new THREE.CylinderGeometry(0.24, 0.24, 0.36, 12)), steelMat);
                 drum.rotation.z = Math.PI / 2;
                 drum.position.set(-0.36, -0.05, 0.02);
                 headPivot.add(drum);
 
                 barrelCluster = new THREE.Group();
                 barrelCluster.position.set(0, 0, 0.85);
-                const bGeo = new THREE.CylinderGeometry(0.024, 0.024, 0.95, 6);
-                bGeo.rotateX(Math.PI / 2);
+                const bGeo = this._tGeo('tGatBarrel', () => {
+                    const g = new THREE.CylinderGeometry(0.024, 0.024, 0.95, 6);
+                    g.rotateX(Math.PI / 2);
+                    return g;
+                });
                 for (let i = 0; i < 6; i++) {
                     const ang = (i / 6) * Math.PI * 2;
                     const bar = new THREE.Mesh(bGeo, steelMat);
                     bar.position.set(Math.cos(ang) * 0.09, Math.sin(ang) * 0.09, 0);
                     barrelCluster.add(bar);
                 }
-                const tipRing = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.02, 6, 14), glowMat);
+                const tipRing = new THREE.Mesh(this._tGeo('tGatRing', () => new THREE.TorusGeometry(0.11, 0.02, 6, 14)), glowMat);
                 tipRing.position.z = 0.42;
                 barrelCluster.add(tipRing);
                 headPivot.add(barrelCluster);
@@ -978,17 +1003,19 @@
                 // Twin-barrel Polymer Plasma Sentry
                 barrelCluster = new THREE.Group();
                 barrelCluster.position.set(0, 0, 0.56);
+                const polyBarGeo = this._tGeo('tPolyBar', () => new THREE.CylinderGeometry(0.055, 0.068, 0.82, 8));
+                const polyCoreGeo = this._tGeo('tPolyCore', () => new THREE.CylinderGeometry(0.045, 0.045, 0.65, 8));
                 [-0.16, 0.16].forEach(bx => {
-                    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.068, 0.82, 8), steelMat);
+                    const bar = new THREE.Mesh(polyBarGeo, steelMat);
                     bar.rotation.x = Math.PI / 2;
                     bar.position.set(bx, 0, 0);
-                    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.65, 8), glowMat);
+                    const core = new THREE.Mesh(polyCoreGeo, glowMat);
                     core.rotation.x = Math.PI / 2;
                     core.position.set(bx, 0.06, -0.14);
                     barrelCluster.add(bar, core);
                 });
                 headPivot.add(barrelCluster);
-                const holoHalo = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.03, 6, 20), glowMat);
+                const holoHalo = new THREE.Mesh(this._tGeo('tHoloHalo', () => new THREE.TorusGeometry(0.55, 0.03, 6, 20)), glowMat);
                 holoHalo.rotation.x = Math.PI / 2;
                 holoHalo.position.y = 0.45;
                 group.add(holoHalo);
@@ -998,12 +1025,12 @@
 
             // Overhead 3D Health Bar so players see when robots attack their Gatlings!
             const hpBg = new THREE.Mesh(
-                new THREE.BoxGeometry(1.15, 0.11, 0.08),
-                new THREE.MeshBasicMaterial({ color: 0x09130f })
+                this._tGeo('tHpBg', () => new THREE.BoxGeometry(1.15, 0.11, 0.08)),
+                this._tMat('tHpBgMat', () => new THREE.MeshBasicMaterial({ color: 0x09130f }))
             );
             hpBg.position.set(0, 2.05, 0);
             const hpFill = new THREE.Mesh(
-                new THREE.BoxGeometry(1.08, 0.08, 0.1),
+                this._tGeo('tHpFill', () => new THREE.BoxGeometry(1.08, 0.08, 0.1)),
                 new THREE.MeshBasicMaterial({ color: isGatling ? 0xf97316 : 0x4ade80 })
             );
             hpFill.position.set(0, 2.05, 0);
@@ -1011,9 +1038,10 @@
 
             this.scene.add(group);
 
-            const dmg = customStats ? customStats.damage : (isGatling ? (isMini ? 22 : 30) : 34);
-            const fireInterval = customStats ? customStats.fireRate : (isGatling ? (isMini ? 0.11 : 0.068) : 0.26);
+            const dmg = customStats ? customStats.damage : (isGatling ? (isMini ? 20 : 28) : 32);
+            const fireInterval = customStats ? customStats.fireRate : (isGatling ? (isMini ? 0.115 : 0.075) : 0.26);
             const range = customStats ? customStats.range : (isGatling ? 46 : 38);
+            const baseHp = isGatling ? 680 : 340;
 
             const tObj = {
                 kind,
@@ -1027,8 +1055,8 @@
                 y,
                 z,
                 pos: new THREE.Vector3(x, y, z),
-                hp: isGatling ? 980 : 420,
-                maxHp: isGatling ? 980 : 420,
+                hp: baseHp,
+                maxHp: baseHp,
                 life: permanent ? Infinity : duration,
                 maxLife: permanent ? Infinity : duration,
                 fireTimer: 0.15,
@@ -1065,22 +1093,29 @@
         }
 
         update(dt, combat, gameCtx) {
-            const muzzleWorld = new THREE.Vector3();
+            if (!this._vMuzzle) {
+                this._vMuzzle = new THREE.Vector3();
+                this._vHeadOrigin = new THREE.Vector3();
+                this._vTargetCenter = new THREE.Vector3();
+            }
+            const muzzleWorld = this._vMuzzle;
+            const headOrigin = this._vHeadOrigin;
+            const aCenter = this._vTargetCenter;
+
             for (let i = this.turrets.length - 1; i >= 0; i--) {
                 const t = this.turrets[i];
                 if (!t.permanent && Number.isFinite(t.life)) {
                     t.life -= dt;
                 }
                 if ((!t.permanent && t.life <= 0) || t.hp <= 0) {
-                    combat._spawnParticles(new THREE.Vector3(t.x, t.y + 1.0, t.z), t.color, 12, 8);
+                    combat._spawnParticles(aCenter.set(t.x, t.y + 1.0, t.z), t.color, 12, 8);
                     if (t.box) this.map.dynamicBoxes = this.map.dynamicBoxes.filter(b => b !== t.box);
                     this.scene.remove(t.group);
                     this.turrets.splice(i, 1);
                     continue;
                 }
 
-                // Shield Screen Passive Proximity Regen
-                const headOrigin = new THREE.Vector3(t.x, t.y + 1.35, t.z);
+                headOrigin.set(t.x, t.y + 1.35, t.z);
 
                 // Acquire nearest visible live alien (throttled LOS scan for late-wave FPS)
                 t._scanTimer = (t._scanTimer || 0) - dt;
@@ -1088,17 +1123,20 @@
                 if (!target || t._scanTimer <= 0) {
                     t._scanTimer = 0.14;
                     target = null;
-                    let bestDist = t.range;
-                    for (let ai = 0; ai < this.enemies.aliens.length; ai++) {
-                        const a = this.enemies.aliens[ai];
+                    let bestDistSq = t.range * t.range;
+                    const aliens = this.enemies.aliens;
+                    for (let ai = 0; ai < aliens.length; ai++) {
+                        const a = aliens[ai];
                         if (a.dying || a.hp <= 0) continue;
                         const ap = a.group.position;
                         const ay = ap.y + 1.35 * a.baseScale;
-                        const dSq = Math.pow(ap.x - headOrigin.x, 2) + Math.pow(ay - headOrigin.y, 2) + Math.pow(ap.z - headOrigin.z, 2);
-                        if (dSq < bestDist * bestDist) {
-                            const d = Math.sqrt(dSq);
+                        const dx = ap.x - headOrigin.x;
+                        const dy = ay - headOrigin.y;
+                        const dz = ap.z - headOrigin.z;
+                        const dSq = dx * dx + dy * dy + dz * dz;
+                        if (dSq < bestDistSq) {
                             if (this.map.hasLineOfSight(headOrigin.x, headOrigin.y, headOrigin.z, ap.x, ay, ap.z)) {
-                                bestDist = d;
+                                bestDistSq = dSq;
                                 target = a;
                             }
                         }
@@ -1107,7 +1145,8 @@
                 }
 
                 if (target) {
-                    const aCenter = target.group.position.clone().add(new THREE.Vector3(0, 1.35 * target.baseScale, 0));
+                    const tp = target.group.position;
+                    aCenter.set(tp.x, tp.y + 1.35 * target.baseScale, tp.z);
                     const dx = aCenter.x - headOrigin.x;
                     const dy = aCenter.y - headOrigin.y;
                     const dz = aCenter.z - headOrigin.z;
@@ -1131,7 +1170,6 @@
                         if (!t.isGatling) {
                             target.shockTimer = Math.max(target.shockTimer, 0.45);
                         }
-                        // Robot remembers the "troll" Gatling turret shooting it and may try to destroy it!
                         if (!target.aggroTurret || target.aggroTurret.hp <= 0) {
                             target.aggroTurret = t;
                         }

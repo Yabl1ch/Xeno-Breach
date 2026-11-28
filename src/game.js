@@ -53,6 +53,11 @@
 
             this.fireCooldown = 0;
             this.reloading = false;
+            this.playerCryoSlowTimer = 0;
+            this._hudSyncTimer = 0;
+            this._radarTimer = 0;
+            this._camDir = new THREE.Vector3();
+            this._combatCtx = null;
             this.reloadTimer = 0;
             this.currentReloadDur = 1.0;
             this.isCharging = false;
@@ -171,52 +176,68 @@
 
         getCombatContext() {
             const armor = this.getEffectiveArmor();
-            const camDir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).normalize();
-            return {
-                playerPos: this.player.pos,
-                playerVel: this.player.vel,
-                playerEyeHeight: this.player.currentEyeHeight,
-                cameraDir: camDir,
-                armor,
-                coins: this.coins,
-                crystals: this.crystals,
-                building: this.building,
-                combat: this.combat,
-                turrets: this.building.turrets,
-                waveState: this.waveState,
-                timeStopActive: this.combat.timeStopTimer > 0,
-                timeSlowActive: this.combat.timeSlowTimer > 0,
-                isAiming: this.isAiming,
-                showToast: (msg, color) => this.showToast(msg, color),
-                spendResources: (coinCost, polyCost) => {
-                    this.coins = Math.max(0, this.coins - (coinCost || 0));
-                    this.combat.polymerEnergy = Math.max(0, this.combat.polymerEnergy - (polyCost || 0));
-                },
-                restoreShield: (amt) => {
-                    this.shield = Math.min(armor.maxShield, this.shield + amt);
-                    this.triggerScreenFX('fx-shield');
-                    this.ui.syncHUD();
-                },
-                restoreShieldSilent: (amt) => {
-                    this.shield = Math.min(armor.maxShield, this.shield + amt);
-                },
-                restoreHpAndShield: (hpAmt, shAmt) => {
-                    this.hp = Math.min(armor.maxHp, this.hp + hpAmt);
-                    this.shield = Math.min(armor.maxShield, this.shield + shAmt);
-                    this.triggerScreenFX('fx-heal');
-                    this.ui.syncHUD();
-                },
-                damagePlayer: (amt, srcPos) => this.damagePlayer(amt, srcPos),
-                onAlienKilled: (alien) => this.onAlienKilled(alien),
-                onDamageAlien: (a, dmg, pt, col, isHead) => this.combat.damageAlien(a, dmg, pt, col, isHead, 1.75, this.getCombatContext()),
-                onDamagePlayer: (amt, srcPos) => this.damagePlayer(amt, srcPos),
-                onDamageStructure: (st, dmg, attacker) => this.building.damageStructure(st, dmg, attacker, this.getCombatContext()),
-                onDamageTurret: (tr, dmg, attacker) => this.building.damageTurret(tr, dmg, attacker, this.getCombatContext()),
-                spawnParticles: (p, c, n, s) => this.combat._spawnParticles(p, c, n, s),
-                spawnShockwave: (p, r, c, l) => this.combat._spawnShockwave(p, r, c, l),
-                onCollectPickup: (pk, silent) => this.onCollectPickup(pk, silent),
-                onWaveButtonHit: () => this.onWaveButtonHit()
-            };
+            this._camDir.set(0, 0, -1).applyQuaternion(this.camera.quaternion).normalize();
+            if (!this._combatCtx) {
+                this._combatCtx = {
+                    playerPos: this.player.pos,
+                    playerVel: this.player.vel,
+                    playerEyeHeight: this.player.currentEyeHeight,
+                    cameraDir: this._camDir,
+                    armor,
+                    coins: this.coins,
+                    crystals: this.crystals,
+                    building: this.building,
+                    combat: this.combat,
+                    turrets: this.building.turrets,
+                    waveState: this.waveState,
+                    timeStopActive: this.combat.timeStopTimer > 0,
+                    timeSlowActive: this.combat.timeSlowTimer > 0,
+                    isAiming: this.isAiming,
+                    showToast: (msg, color) => this.showToast(msg, color),
+                    spendResources: (coinCost, polyCost) => {
+                        this.coins = Math.max(0, this.coins - (coinCost || 0));
+                        this.combat.polymerEnergy = Math.max(0, this.combat.polymerEnergy - (polyCost || 0));
+                    },
+                    restoreShield: (amt) => {
+                        const curArmor = this.getEffectiveArmor();
+                        this.shield = Math.min(curArmor.maxShield, this.shield + amt);
+                        this.triggerScreenFX('fx-shield');
+                        this.ui.syncHUD();
+                    },
+                    restoreShieldSilent: (amt) => {
+                        const curArmor = this.getEffectiveArmor();
+                        this.shield = Math.min(curArmor.maxShield, this.shield + amt);
+                    },
+                    restoreHpAndShield: (hpAmt, shAmt) => {
+                        const curArmor = this.getEffectiveArmor();
+                        this.hp = Math.min(curArmor.maxHp, this.hp + hpAmt);
+                        this.shield = Math.min(curArmor.maxShield, this.shield + shAmt);
+                        this.triggerScreenFX('fx-heal');
+                        this.ui.syncHUD();
+                    },
+                    damagePlayer: (amt, srcPos, hitMeta) => this.damagePlayer(amt, srcPos, hitMeta),
+                    onAlienKilled: (alien) => this.onAlienKilled(alien),
+                    onDamageAlien: (a, dmg, pt, col, isHead) => this.combat.damageAlien(a, dmg, pt, col, isHead, 1.75, this.getCombatContext()),
+                    onDamagePlayer: (amt, srcPos, hitMeta) => this.damagePlayer(amt, srcPos, hitMeta),
+                    onDamageStructure: (st, dmg, attacker) => this.building.damageStructure(st, dmg, attacker, this.getCombatContext()),
+                    onDamageTurret: (tr, dmg, attacker) => this.building.damageTurret(tr, dmg, attacker, this.getCombatContext()),
+                    spawnParticles: (p, c, n, s) => this.combat._spawnParticles(p, c, n, s),
+                    spawnShockwave: (p, r, c, l) => this.combat._spawnShockwave(p, r, c, l),
+                    onCollectPickup: (pk, silent) => this.onCollectPickup(pk, silent),
+                    onWaveButtonHit: () => this.onWaveButtonHit()
+                };
+            }
+            const ctx = this._combatCtx;
+            ctx.playerEyeHeight = this.player.currentEyeHeight;
+            ctx.armor = armor;
+            ctx.coins = this.coins;
+            ctx.crystals = this.crystals;
+            ctx.turrets = this.building.turrets;
+            ctx.waveState = this.waveState;
+            ctx.timeStopActive = this.combat.timeStopTimer > 0;
+            ctx.timeSlowActive = this.combat.timeSlowTimer > 0;
+            ctx.isAiming = this.isAiming;
+            return ctx;
         }
 
         // =====================================================================
@@ -1067,25 +1088,41 @@
                 if (active) d.openTimer = 3.2;
             });
 
-            // Significantly increased horde counts + logical Melee Tanks vs Ranged Specialists!
-            const total = 11 + waveNum * 5;
+            // Escalated Hardcore Horde + All 18 Robot Classes (Machine-Gunners, Anti-Turret Saboteurs, Sappers, Dreadnoughts!)
+            const total = 14 + waveNum * 7;
             for (let i = 0; i < total; i++) {
                 const r = Math.random();
                 if (waveNum % 5 === 0 && i === total - 1) {
-                    this.enemiesToSpawn.push('overlord');
-                } else if (waveNum >= 3 && i >= total - 2) {
+                    this.enemiesToSpawn.push(waveNum >= 10 ? 'dreadnought' : 'overlord');
+                } else if (waveNum >= 10 && i === Math.floor(total * 0.55)) {
+                    this.enemiesToSpawn.push(waveNum >= 15 ? 'dreadnought' : 'overlord');
+                } else if (waveNum >= 12 && r < 0.08) {
+                    this.enemiesToSpawn.push('heavy_gunner');
+                } else if (waveNum >= 5 && r < 0.16) {
+                    this.enemiesToSpawn.push('gunner');
+                } else if (waveNum >= 3 && r < 0.24) {
+                    this.enemiesToSpawn.push('turret_killer');
+                } else if (waveNum >= 2 && r < 0.31) {
+                    this.enemiesToSpawn.push('sapper');
+                } else if (waveNum >= 6 && r < 0.37) {
+                    this.enemiesToSpawn.push('aegis_commander');
+                } else if (waveNum >= 5 && r < 0.43) {
+                    this.enemiesToSpawn.push('rail_enforcer');
+                } else if (waveNum >= 4 && r < 0.50) {
+                    this.enemiesToSpawn.push(r < 0.465 ? 'cryo_trooper' : 'pyro_trooper');
+                } else if (waveNum >= 2 && r < 0.57) {
+                    this.enemiesToSpawn.push('berserker');
+                } else if (waveNum >= 4 && r < 0.65) {
                     this.enemiesToSpawn.push('brute');
-                } else if (waveNum >= 4 && r < 0.14) {
-                    this.enemiesToSpawn.push('brute');
-                } else if (r < (waveNum === 1 ? 0.18 : 0.28)) {
-                    this.enemiesToSpawn.push('shieldbearer');
-                } else if (waveNum >= 2 && r < 0.42) {
-                    this.enemiesToSpawn.push('sniper');
-                } else if (waveNum >= 3 && r < 0.56) {
-                    this.enemiesToSpawn.push('grenadier');
                 } else if (waveNum >= 2 && r < 0.72) {
-                    this.enemiesToSpawn.push('leaper');
+                    this.enemiesToSpawn.push(i % 2 === 0 ? 'gunner' : 'sniper');
+                } else if (waveNum >= 3 && r < 0.79) {
+                    this.enemiesToSpawn.push('grenadier');
                 } else if (r < 0.86) {
+                    this.enemiesToSpawn.push('shieldbearer');
+                } else if (waveNum >= 2 && r < 0.92) {
+                    this.enemiesToSpawn.push('leaper');
+                } else if (r < 0.96) {
                     this.enemiesToSpawn.push('spitter');
                 } else {
                     this.enemiesToSpawn.push('scout');
@@ -1093,7 +1130,7 @@
             }
 
             this.waveSpawning = true;
-            this.spawnTimer = 1.1;
+            this.spawnTimer = 0.85;
             this.sound.playWaveStart();
             this.sound.playAirlockAlarm();
 
@@ -1101,8 +1138,8 @@
             this.showBanner(
                 isBossWave ? `ВОЛНА ${waveNum} • АЛЬФА-БОСС` : `ВОЛНА ${waveNum} (${total} ЕД.)`,
                 isBossWave
-                    ? 'ВНИМАНИЕ: АЛЬФА-ТИТАН «ГОЛИАФ» И ОРДА РОБОТОВ В ШЛЮЗАХ!'
-                    : 'Шлюзовые ворота открыты! Танки прорывают строй — берегитесь снайперов и гренадёров!'
+                    ? 'ТРЕВОГА: ДРЕДНОУТ «НЕМЕЗИДА» И ШТУРМОВАЯ ОРДА С ПУЛЕМЁТАМИ!'
+                    : 'Шлюзы вскрыты! Берегитесь пулемётчиков «ГАТЛИНГ» и диверсантов против турелей!'
             );
             this.ui.syncHUD();
         }
@@ -1166,12 +1203,17 @@
             this.ui.syncHUD();
         }
 
-        damagePlayer(amount, attackerPos) {
+        damagePlayer(amount, attackerPos, hitMeta = null) {
             if (this.state !== 'PLAYING' || this.combat.emergencyInvulnTimer > 0) return;
             this.lastDamageTime = performance.now();
 
+            if (hitMeta && hitMeta.cryoSlow) {
+                this.playerCryoSlowTimer = Math.max(this.playerCryoSlowTimer, hitMeta.cryoSlow);
+            }
+            const extraHeat = (hitMeta && hitMeta.isPyro) ? 1.15 : 1.0;
+
             const armor = this.getEffectiveArmor();
-            let effective = amount * (1 - armor.damageReduction);
+            let effective = amount * extraHeat * (1 - armor.damageReduction);
             if (this.combat.aegisShieldTimer > 0) effective *= 0.15;
 
             if (armor.thornsDmg > 0 && attackerPos) {
@@ -1353,6 +1395,12 @@
                 moveRight: 0
             };
             this.player.stepSimulation(dt, inputState);
+            if (this.playerCryoSlowTimer > 0) {
+                this.playerCryoSlowTimer = Math.max(0, this.playerCryoSlowTimer - dt);
+                const damp = Math.exp(-1.2 * dt);
+                this.player.vel.x *= damp;
+                this.player.vel.z *= damp;
+            }
 
             const horizSpeed = Math.hypot(this.player.vel.x, this.player.vel.z);
             const shakeX = (Math.random() - 0.5) * this.player.cameraShake;
@@ -1380,24 +1428,40 @@
             const wantsScope = canAds && (curWeapon.adsFov || 78) <= 48;
             if (this.ui.elSniperScope) this.ui.elSniperScope.classList.toggle('hidden', !wantsScope);
             this.ui.crosshair.style.opacity = wantsScope ? '0' : '1';
-            this.ui.speedlines.style.opacity = Math.max(0, Math.min(0.82, (horizSpeed - 17.0) / 16 + (this.boostActiveTimer > 0 ? 0.3 : 0))).toFixed(2);
+            const speedOp = Math.max(0, Math.min(0.82, (horizSpeed - 17.0) / 16 + (this.boostActiveTimer > 0 ? 0.3 : 0))).toFixed(2);
+            if (this._lastSpeedOp !== speedOp) {
+                this._lastSpeedOp = speedOp;
+                this.ui.speedlines.style.opacity = speedOp;
+            }
 
-            this.ui.elSpeedPill.textContent = `SPD ${horizSpeed.toFixed(1)} м/с`;
-            this.ui.elSpeedPill.className = this.boostActiveTimer > 0 ? 'overdrive' : (horizSpeed > 16.5 ? 'fast' : '');
+            const spdTxt = `SPD ${horizSpeed.toFixed(1)} м/с`;
+            if (this._lastSpdTxt !== spdTxt) {
+                this._lastSpdTxt = spdTxt;
+                this.ui.elSpeedPill.textContent = spdTxt;
+            }
+            const spdCls = this.boostActiveTimer > 0 ? 'overdrive' : (horizSpeed > 16.5 ? 'fast' : '');
+            if (this._lastSpdCls !== spdCls) {
+                this._lastSpdCls = spdCls;
+                this.ui.elSpeedPill.className = spdCls;
+            }
+            let moveTag = this.player.moveTag || (this.boostActiveTimer > 0 ? 'ОВЕРДРАЙВ' : '');
             if (this.isCharging && curWeapon.kind === 'polymer_sphere') {
                 const m = 0.75 + this.chargeTime * 1.48 + (this.pumpedPolymer / 100) * 1.15;
                 const bR = Math.round(6.2 + Math.min(34, this.chargeTime * 4.8 + this.pumpedPolymer * 0.045));
-                this.ui.elMoveTag.textContent = `СФЕРА ${this.chargeTime.toFixed(1)}с • x${m.toFixed(1)} • ВЗРЫВ ${bR}М`;
-            } else {
-                this.ui.elMoveTag.textContent = this.player.moveTag || (this.boostActiveTimer > 0 ? 'ОВЕРДРАЙВ' : '');
+                moveTag = `СФЕРА ${this.chargeTime.toFixed(1)}с • x${m.toFixed(1)} • ВЗРЫВ ${bR}М`;
+            } else if (this.playerCryoSlowTimer > 0 && !moveTag) {
+                moveTag = 'КРИО-ЗАМЕДЛЕНИЕ';
+            }
+            if (this._lastMoveTag !== moveTag) {
+                this._lastMoveTag = moveTag;
+                this.ui.elMoveTag.textContent = moveTag;
             }
 
-            if (this.player.dashCooldown <= 0) {
-                this.ui.elDashPill.textContent = 'SHIFT РЫВОК: ГОТОВ';
-                this.ui.elDashPill.classList.remove('cooling');
-            } else {
-                this.ui.elDashPill.textContent = `РЫВОК: ${this.player.dashCooldown.toFixed(1)}с`;
-                this.ui.elDashPill.classList.add('cooling');
+            const dashTxt = this.player.dashCooldown <= 0 ? 'SHIFT РЫВОК: ГОТОВ' : `РЫВОК: ${this.player.dashCooldown.toFixed(1)}с`;
+            if (this._lastDashTxt !== dashTxt) {
+                this._lastDashTxt = dashTxt;
+                this.ui.elDashPill.textContent = dashTxt;
+                this.ui.elDashPill.classList.toggle('cooling', this.player.dashCooldown > 0);
             }
 
             // 5. ViewModels
@@ -1434,13 +1498,13 @@
             if (this.waveState === 'COMBAT' && this.combat.timeStopTimer <= 0) {
                 if (this.waveSpawning) {
                     const spawnScale = this.combat.timeSlowTimer > 0 ? 0.25 : 1.0;
-                    const maxConcurrent = Math.min(24, 12 + this.wave);
+                    const maxConcurrent = Math.min(34, 14 + this.wave);
                     this.spawnTimer -= dt * spawnScale;
                     if (this.spawnTimer <= 0 && this.enemiesToSpawn.length > 0 && this.enemies.getAliveCount() < maxConcurrent) {
                         const doorIdx = this.activeDoorIndices[Math.floor(Math.random() * this.activeDoorIndices.length)];
                         const door = this.map.breachDoors[doorIdx];
                         this.enemies.spawnAlien(this.enemiesToSpawn.pop(), this.wave, door);
-                        this.spawnTimer = Math.max(0.28, 0.92 - this.wave * 0.05);
+                        this.spawnTimer = Math.max(0.14, 0.72 - this.wave * 0.032);
                         this.ui.syncHUD();
                     }
                     if (this.enemiesToSpawn.length === 0) this.waveSpawning = false;
@@ -1492,14 +1556,22 @@
 
             this.ui.elTerminalPrompt.classList.toggle('show', this._isNearArmoryTerminal());
 
-            // 9. HUD timers
+            // 9. HUD timers (throttled HUD sync & radar for smooth 60+ FPS)
             if (this.hitmarkerTimer > 0) { this.hitmarkerTimer -= rawDt; if (this.hitmarkerTimer <= 0) this.ui.hitmarker.classList.remove('show'); }
             if (this.bannerTimer > 0) { this.bannerTimer -= rawDt; if (this.bannerTimer <= 0) this.ui.elBanner.classList.remove('visible'); }
             if (this.fxTimer > 0) { this.fxTimer -= rawDt; if (this.fxTimer <= 0) this.ui.screenFx.classList.remove('fx-damage', 'fx-shield', 'fx-heal'); }
             if (this.toastTimer > 0) { this.toastTimer -= rawDt; if (this.toastTimer <= 0) this.ui.elToast.classList.remove('show'); }
 
-            this.ui.syncHUD();
-            this.ui.renderRadar();
+            this._hudSyncTimer -= rawDt;
+            if (this._hudSyncTimer <= 0) {
+                this._hudSyncTimer = 0.066;
+                this.ui.syncHUD();
+            }
+            this._radarTimer -= rawDt;
+            if (this._radarTimer <= 0) {
+                this._radarTimer = 0.05;
+                this.ui.renderRadar();
+            }
         }
 
         showBanner(title, sub) {

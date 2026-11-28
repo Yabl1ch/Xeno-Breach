@@ -1162,9 +1162,19 @@
             if (this.timeStopTimer > 0) this.timeStopTimer = Math.max(0, this.timeStopTimer - dt);
 
             // 1. Enemy Bullets & Grenades (CCD Anti-Tunneling, Stopped by Walls/Crafted Walls/Holo-Shields!)
-            const playerCenter = new THREE.Vector3(playerPos.x, playerPos.y + playerEyeHeight * 0.62, playerPos.z);
+            if (!this._vPlayerCenter) {
+                this._vPlayerCenter = new THREE.Vector3();
+                this._vPrevBullet = new THREE.Vector3();
+                this._vACenter = new THREE.Vector3();
+                this._vPrevOrb = new THREE.Vector3();
+            }
+            const playerCenter = this._vPlayerCenter.set(playerPos.x, playerPos.y + playerEyeHeight * 0.62, playerPos.z);
             const bulletScale = this.timeStopTimer > 0 ? 0.0 : (this.timeSlowTimer > 0 ? 0.22 : 1.0);
-            const prevBulletPos = new THREE.Vector3();
+            const prevBulletPos = this._vPrevBullet;
+            const releaseBullet = (bul) => {
+                if (this.enemies.releaseEnemyBullet) this.enemies.releaseEnemyBullet(bul);
+                else this.scene.remove(bul.mesh);
+            };
 
             const dmgTurretFn = gameCtx.onDamageTurret || (gameCtx.building ? (tr, d, att) => gameCtx.building.damageTurret(tr, d, att, gameCtx) : null);
 
@@ -1212,14 +1222,13 @@
                                 const tx = tr.pos ? tr.pos.x : tr.x;
                                 const ty = tr.pos ? tr.pos.y : tr.y;
                                 const tz = tr.pos ? tr.pos.z : tr.z;
-                                if (Math.hypot(tx - boomPos.x, tz - boomPos.z) <= b.blastRadius + 0.8 &&
-                                    Math.abs(ty + 1.0 - boomPos.y) <= b.blastRadius + 1.0) {
-                                    dmgTurretFn(tr, b.damage * 1.3, null);
+                                if (Math.hypot(tx - boomPos.x, tz - boomPos.z) <= b.blastRadius + 1.0 &&
+                                    Math.abs(ty + 1.0 - boomPos.y) <= b.blastRadius + 1.8) {
+                                    dmgTurretFn(tr, b.damage * (b.turretMult || 1.45), null);
                                 }
                             }
                         }
-                        if (b.ringMesh) this.scene.remove(b.ringMesh);
-                        this.scene.remove(b.mesh);
+                        releaseBullet(b);
                         this.enemies.enemyBullets.splice(i, 1);
                     }
                     continue;
@@ -1228,9 +1237,9 @@
                 if (wallSweep.hit) {
                     const hitPt = wallSweep.point || b.mesh.position;
                     const isHolo = wallSweep.box && wallSweep.box.isShieldScreen;
-                    this._spawnParticles(hitPt, isHolo ? 0x34d399 : b.color, isHolo ? 8 : 5, 4);
+                    this._spawnParticles(hitPt, isHolo ? 0x34d399 : b.color, isHolo ? 8 : 4, 4);
                     if (isHolo) this.sound.playShieldBlock();
-                    this.scene.remove(b.mesh);
+                    releaseBullet(b);
                     this.enemies.enemyBullets.splice(i, 1);
                     continue;
                 }
@@ -1249,7 +1258,8 @@
                     let hitAlien = false;
                     for (const a of this.enemies.aliens) {
                         if (a.dying) continue;
-                        const aCenter = a.group.position.clone().add(new THREE.Vector3(0, 1.45 * a.baseScale, 0));
+                        const ap = a.group.position;
+                        const aCenter = this._vACenter.set(ap.x, ap.y + 1.45 * a.baseScale, ap.z);
                         if (b.mesh.position.distanceTo(aCenter) < a.radius + 0.6) {
                             this.damageAlien(a, b.damage, b.mesh.position, 0x34d399, false, 1.75, gameCtx);
                             hitAlien = true;
@@ -1257,7 +1267,7 @@
                         }
                     }
                     if (hitAlien) {
-                        this.scene.remove(b.mesh);
+                        releaseBullet(b);
                         this.enemies.enemyBullets.splice(i, 1);
                         continue;
                     }
@@ -1270,13 +1280,11 @@
                             const tx = tr.pos ? tr.pos.x : tr.x;
                             const ty = tr.pos ? tr.pos.y : tr.y;
                             const tz = tr.pos ? tr.pos.z : tr.z;
-                            const dSqT = Math.pow(b.mesh.position.x - tx, 2) +
-                                         Math.pow(b.mesh.position.y - (ty + 1.0), 2) +
-                                         Math.pow(b.mesh.position.z - tz, 2);
-                            if (dSqT < 1.55 * 1.55) {
-                                dmgTurretFn(tr, b.damage * 1.25, null);
-                                this._spawnParticles(b.mesh.position, b.color, 7, 4);
-                                this.scene.remove(b.mesh);
+                            const dXZ = Math.hypot(b.mesh.position.x - tx, b.mesh.position.z - tz);
+                            if (dXZ < 1.38 && b.mesh.position.y >= ty - 0.35 && b.mesh.position.y <= ty + 2.45) {
+                                dmgTurretFn(tr, b.damage * (b.turretMult || 1.35), null);
+                                this._spawnParticles(b.mesh.position, b.color, 5, 4);
+                                releaseBullet(b);
                                 this.enemies.enemyBullets.splice(i, 1);
                                 hitTurret = true;
                                 break;
@@ -1285,9 +1293,9 @@
                     }
                     if (hitTurret) continue;
                     if (b.mesh.position.distanceTo(playerCenter) < 1.35) {
-                        gameCtx.damagePlayer(b.damage, b.mesh.position);
-                        this._spawnParticles(b.mesh.position, b.color, 7, 4);
-                        this.scene.remove(b.mesh);
+                        gameCtx.damagePlayer(b.damage, b.mesh.position, b);
+                        this._spawnParticles(b.mesh.position, b.color, 6, 4);
+                        releaseBullet(b);
                         this.enemies.enemyBullets.splice(i, 1);
                         continue;
                     }
@@ -1296,13 +1304,13 @@
                 const outBounds = Math.abs(b.mesh.position.x) > this.map.ARENA_LIMIT_X + 1 ||
                                   Math.abs(b.mesh.position.z) > this.map.ARENA_LIMIT_Z + 1;
                 if (outBounds || b.life <= 0) {
-                    this.scene.remove(b.mesh);
+                    releaseBullet(b);
                     this.enemies.enemyBullets.splice(i, 1);
                 }
             }
 
             // 2. Player Orbs (Nova, Cryo Grenade, Homing Micro-Missiles, Infinite-Charge Polymer Sphere)
-            const prevOrbPos = new THREE.Vector3();
+            const prevOrbPos = this._vPrevOrb;
             for (let i = this.playerOrbs.length - 1; i >= 0; i--) {
                 const o = this.playerOrbs[i];
                 prevOrbPos.copy(o.mesh.position);
